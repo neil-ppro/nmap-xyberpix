@@ -27,6 +27,7 @@
 #endif
 
 #define SIEM_HOSTNAME_LEN 256
+#define SIEM_SCHEMA_VERSION 1
 
 static FILE *siem_fp;
 #ifndef WIN32
@@ -84,6 +85,57 @@ static std::string json_escape(const char *s) {
     }
   }
   return out;
+}
+
+/* UTC ISO-8601 with millisecond (Windows) or microsecond (Unix) fractional part. */
+static void siem_iso_timestamp_utc(char *buf, size_t buflen) {
+#ifdef WIN32
+  SYSTEMTIME st;
+
+  GetSystemTime(&st);
+  Snprintf(buf, buflen, "%04u-%02u-%02uT%02u:%02u:%02u.%03uZ",
+           (unsigned) st.wYear, (unsigned) st.wMonth, (unsigned) st.wDay,
+           (unsigned) st.wHour, (unsigned) st.wMinute, (unsigned) st.wSecond,
+           (unsigned) st.wMilliseconds);
+#else
+  struct timeval tv;
+  struct tm tm;
+  char datepart[32];
+  char frac[24];
+
+  memset(&tv, 0, sizeof(tv));
+  gettimeofday(&tv, NULL);
+  gmtime_r(&tv.tv_sec, &tm);
+  strftime(datepart, sizeof(datepart), "%Y-%m-%dT%H:%M:%S", &tm);
+  Snprintf(frac, sizeof(frac), ".%06ldZ", (long) tv.tv_usec);
+  Snprintf(buf, buflen, "%s%s", datepart, frac);
+#endif
+}
+
+/* Common JSON envelope: schema_version, ts, event, scan_id, scanner_hostname, optional tag. */
+static void siem_json_open_envelope(std::string &line, const char *event_literal) {
+  char ts[48];
+  char ver[16];
+
+  siem_iso_timestamp_utc(ts, sizeof(ts));
+  Snprintf(ver, sizeof(ver), "%d", SIEM_SCHEMA_VERSION);
+  line.reserve(384);
+  line = "{\"schema_version\":";
+  line += ver;
+  line += ",\"ts\":\"";
+  line += ts;
+  line += "\",\"event\":\"";
+  line += event_literal;
+  line += "\",\"scan_id\":\"";
+  line += json_escape(siem_scan_id);
+  line += "\",\"scanner_hostname\":\"";
+  line += json_escape(siem_scanner_host);
+  line += "\"";
+  if (siem_tag) {
+    line += ",\"tag\":\"";
+    line += json_escape(siem_tag);
+    line += "\"";
+  }
 }
 
 static void rfc5424_sanitize_app_field(char *s) {
@@ -258,7 +310,8 @@ void siem_log_init(const char *path, bool append, const char *tag_or_null,
     else
       siem_fp = fopen(path, "w");
     if (!siem_fp)
-      pfatal("Failed to open SIEM log file %s", path);
+      error("Warning: Failed to open SIEM log file %s; SIEM file output disabled "
+            "(scan continues). Use --siem-syslog or fix permissions/path.", path);
   }
 
   if (enable_syslog_logger) {
@@ -330,14 +383,11 @@ void siem_log_scan_start(const char *args_quoted) {
 
   std::string line;
 
-  line = "{\"event\":\"scan_start\",\"scan_id\":\"";
-  line += siem_scan_id;
-  line += "\",\"nmap_version\":\"";
+  siem_json_open_envelope(line, "scan_start");
+  line += ",\"nmap_version\":\"";
   line += json_escape(NMAP_VERSION);
   line += "\",\"platform\":\"";
   line += json_escape(NMAP_PLATFORM);
-  line += "\",\"scanner_hostname\":\"";
-  line += json_escape(siem_scanner_host);
   line += "\",\"pid\":";
   char pidbuf[32];
 #ifdef WIN32
@@ -348,11 +398,6 @@ void siem_log_scan_start(const char *args_quoted) {
   line += pidbuf;
   line += ",\"args\":";
   line += args_quoted ? "\"" + json_escape(args_quoted) + "\"" : "null";
-  if (siem_tag) {
-    line += ",\"tag\":\"";
-    line += json_escape(siem_tag);
-    line += "\"";
-  }
   line += "}";
   siem_write_line(line);
 }
@@ -366,11 +411,8 @@ void siem_log_scan_end(unsigned int numhosts_scanned, unsigned int numhosts_up,
   char elapsed[64];
 
   Snprintf(elapsed, sizeof(elapsed), "%.3f", elapsed_sec);
-  line = "{\"event\":\"scan_end\",\"scan_id\":\"";
-  line += siem_scan_id;
-  line += "\",\"scanner_hostname\":\"";
-  line += json_escape(siem_scanner_host);
-  line += "\",\"hosts_scanned\":";
+  siem_json_open_envelope(line, "scan_end");
+  line += ",\"hosts_scanned\":";
   char nbuf[32];
   Snprintf(nbuf, sizeof(nbuf), "%u", numhosts_scanned);
   line += nbuf;
@@ -379,11 +421,6 @@ void siem_log_scan_end(unsigned int numhosts_scanned, unsigned int numhosts_up,
   line += nbuf;
   line += ",\"elapsed_sec\":";
   line += elapsed;
-  if (siem_tag) {
-    line += ",\"tag\":\"";
-    line += json_escape(siem_tag);
-    line += "\"";
-  }
   line += "}";
   siem_write_line(line);
 }
@@ -394,23 +431,14 @@ void siem_log_host(const Target *target, const char *status) {
 
   std::string line;
 
-  line = "{\"event\":\"host\",\"scan_id\":\"";
-  line += siem_scan_id;
-  line += "\",\"target_ip\":\"";
+  siem_json_open_envelope(line, "host");
+  line += ",\"target_ip\":\"";
   line += json_escape(target->targetipstr());
   line += "\",\"target_hostname\":\"";
   line += json_escape(target->HostName());
   line += "\",\"status\":\"";
   line += json_escape(status);
-  line += "\",\"scanner_hostname\":\"";
-  line += json_escape(siem_scanner_host);
-  line += "\"";
-  if (siem_tag) {
-    line += ",\"tag\":\"";
-    line += json_escape(siem_tag);
-    line += "\"";
-  }
-  line += "}";
+  line += "\"}";
   siem_write_line(line);
 }
 
@@ -424,9 +452,8 @@ void siem_log_port(const Target *target, unsigned short portno,
   char portbuf[16];
 
   Snprintf(portbuf, sizeof(portbuf), "%hu", portno);
-  line = "{\"event\":\"port\",\"scan_id\":\"";
-  line += siem_scan_id;
-  line += "\",\"target_ip\":\"";
+  siem_json_open_envelope(line, "port");
+  line += ",\"target_ip\":\"";
   line += json_escape(target->targetipstr());
   line += "\",\"port\":";
   line += portbuf;
@@ -450,14 +477,6 @@ void siem_log_port(const Target *target, unsigned short portno,
   } else {
     line += "null";
   }
-  line += ",\"scanner_hostname\":\"";
-  line += json_escape(siem_scanner_host);
-  line += "\"";
-  if (siem_tag) {
-    line += ",\"tag\":\"";
-    line += json_escape(siem_tag);
-    line += "\"";
-  }
   line += "}";
   siem_write_line(line);
 }
@@ -469,9 +488,8 @@ void siem_log_os_summary(const Target *target, const char *overall_result,
 
   std::string line;
 
-  line = "{\"event\":\"os_summary\",\"scan_id\":\"";
-  line += siem_scan_id;
-  line += "\",\"target_ip\":\"";
+  siem_json_open_envelope(line, "os_summary");
+  line += ",\"target_ip\":\"";
   line += json_escape(target->targetipstr());
   line += "\",\"overall_result\":\"";
   line += json_escape(overall_result);
@@ -485,14 +503,6 @@ void siem_log_os_summary(const Target *target, const char *overall_result,
   } else {
     line += "null";
   }
-  line += ",\"scanner_hostname\":\"";
-  line += json_escape(siem_scanner_host);
-  line += "\"";
-  if (siem_tag) {
-    line += ",\"tag\":\"";
-    line += json_escape(siem_tag);
-    line += "\"";
-  }
   line += "}";
   siem_write_line(line);
 }
@@ -505,9 +515,8 @@ void siem_log_service_summary(const Target *target,
 
   std::string line;
 
-  line = "{\"event\":\"service_summary\",\"scan_id\":\"";
-  line += siem_scan_id;
-  line += "\",\"target_ip\":\"";
+  siem_json_open_envelope(line, "service_summary");
+  line += ",\"target_ip\":\"";
   line += json_escape(target->targetipstr());
   line += "\",\"service_hostnames\":\"";
   line += json_escape(hostnames_csv ? hostnames_csv : "");
@@ -517,14 +526,6 @@ void siem_log_service_summary(const Target *target,
   line += json_escape(devicetypes_csv ? devicetypes_csv : "");
   line += "\",\"service_cpes\":\"";
   line += json_escape(cpes_csv ? cpes_csv : "");
-  line += "\",\"scanner_hostname\":\"";
-  line += json_escape(siem_scanner_host);
-  line += "\"";
-  if (siem_tag) {
-    line += ",\"tag\":\"";
-    line += json_escape(siem_tag);
-    line += "\"";
-  }
-  line += "}";
+  line += "\"}";
   siem_write_line(line);
 }

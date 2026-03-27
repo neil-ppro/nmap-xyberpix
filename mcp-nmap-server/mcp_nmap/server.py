@@ -38,6 +38,26 @@ _ENV_DATADIR = "NMAP_MCP_DATADIR"
 # Belt-and-suspenders with allow_intrusive_offsec on offsec preset tools.
 _ENV_OFFSEC_INTRUSIVE = "NMAP_MCP_OFFSEC_INTRUSIVE"
 
+# MCP safe-mode: long options blocked by exact match or `--flag=value` prefix.
+# Kept as module-level tables for auditability and tests (see tests/test_policy_extended.py).
+_SAFE_MODE_LONG_PREFIX_BLOCKLIST: tuple[str, ...] = (
+    "--resume",
+    "--iR",
+    "--proxies",
+    "--proxy",
+    "--sI",
+)
+
+_SAFE_MODE_LONG_BASE_BLOCKLIST: frozenset[str] = frozenset(
+    {
+        "--datadir",
+        "--servicedb",
+        "--versiondb",
+        "--stylesheet",
+        "--excludefile",
+    }
+)
+
 _DEFAULT_TIMEOUT = 120
 _MAX_TIMEOUT = 3600
 _MAX_ARG_LEN = 8192
@@ -193,6 +213,119 @@ def _policy_long_o_output_error(
     return "", i + step
 
 
+def _policy_short_o_output_error(
+    o: str, scan_options: list[str], i: int, n: int
+) -> tuple[str | None, int | None]:
+    """
+    Enforce safe-mode rules for short -oN/-oG/-oX/... forms.
+    Returns (error, None) on violation, (None, new_i) when this token was handled,
+    (None, None) when ``o`` is not a relevant -o* output option.
+    """
+    if not (len(o) >= 3 and o.startswith("-o") and o[2] in "NGXSAMH"):
+        return None, None
+    kind = o[2]
+    if kind in "AH":
+        return f"-o{kind} is disabled in safe mode; set {_ENV_UNSAFE_CLI}=1.", None
+    rest = o[3:]
+    if rest == "":
+        if i + 1 >= n:
+            return f"{o[:3]} requires a filename (use - for stdout).", None
+        out = scan_options[i + 1]
+        if out != "-":
+            return (
+                "in safe mode only stdout output is allowed "
+                f"({o[:3]} -); set {_ENV_UNSAFE_CLI}=1 for files.",
+                None,
+            )
+        return None, i + 2
+    if rest.startswith("="):
+        out = rest[1:]
+        if out != "-":
+            return (
+                "in safe mode only stdout output is allowed "
+                f"({o[:3]}=-); set {_ENV_UNSAFE_CLI}=1 for files.",
+                None,
+            )
+        return None, i + 1
+    if rest != "-":
+        return (
+            "in safe mode only stdout output is allowed "
+            f"({o[:3]}-); set {_ENV_UNSAFE_CLI}=1 for files.",
+            None,
+        )
+    return None, i + 1
+
+
+def _policy_long_option_safe_mode(
+    o: str, scan_options: list[str], i: int, n: int
+) -> tuple[str | None, int]:
+    """
+    Handle one ``--long-option`` token under MCP safe mode.
+    Returns (error_message, _) on violation, or (None, next_index) on success.
+    """
+    if o.startswith("--script"):
+        return (
+            f"script options are disabled by default; set "
+            f"{_ENV_UNSAFE_CLI}=1 on the server to allow them.",
+            i,
+        )
+
+    o_sub, new_i = _policy_long_o_output_error(o, scan_options, i, n)
+    # Success is ("", new_i); errors are (message, None). Plain (None, None) means not an --o* output opt.
+    if o_sub:
+        return o_sub, i
+    if new_i is not None:
+        return None, new_i
+
+    if o == "--iL" or o.startswith("--iL="):
+        return (
+            "--iL is disabled in safe mode (arbitrary file read); "
+            f"set {_ENV_UNSAFE_CLI}=1 or use the targets parameter.",
+            i,
+        )
+
+    for bl in _SAFE_MODE_LONG_PREFIX_BLOCKLIST:
+        if o == bl or o.startswith(bl + "="):
+            return (
+                f"{bl} is disabled in MCP safe mode (file read, random "
+                f"targets, proxying, or idle scan); set {_ENV_UNSAFE_CLI}=1.",
+                i,
+            )
+
+    base = o.split("=", 1)[0]
+    if base in _SAFE_MODE_LONG_BASE_BLOCKLIST or any(
+        o == x or o.startswith(x + "=") for x in _SAFE_MODE_LONG_BASE_BLOCKLIST
+    ):
+        return (
+            f"{base} is disabled by default; set {_ENV_UNSAFE_CLI}=1 to allow.",
+            i,
+        )
+
+    if base == "--siem-log":
+        val = o.split("=", 1)[1] if "=" in o else None
+        idx_after_val = i
+        if val is None:
+            if i + 1 >= n:
+                return "--siem-log requires a value.", i
+            val = scan_options[i + 1]
+            idx_after_val = i + 1
+        if val != "-":
+            return (
+                "only --siem-log - (stdout) is allowed in safe mode; "
+                f"set {_ENV_UNSAFE_CLI}=1 for file paths.",
+                i,
+            )
+        return None, idx_after_val + 1
+
+    if base == "--append-output":
+        return (
+            f"--append-output is disabled in safe mode; set {_ENV_UNSAFE_CLI}=1.",
+            i,
+        )
+
+    return None, i + 1
+
+
 def _scan_options_policy_error(scan_options: list[str]) -> str | None:
     """
     Reject scan flags that enable arbitrary code (NSE), arbitrary file reads,
@@ -214,78 +347,12 @@ def _scan_options_policy_error(scan_options: list[str]) -> str | None:
                 "the targets parameter."
             )
 
-        # Long options
         if o.startswith("--"):
-            if o.startswith("--script"):
-                return (
-                    f"script options are disabled by default; set "
-                    f"{_ENV_UNSAFE_CLI}=1 on the server to allow them."
-                )
-            # Long --oN/--oG/... bypassed the short -o* branch; mirror that policy.
-            o_sub, new_i = _policy_long_o_output_error(o, scan_options, i, n)
-            if o_sub is not None or new_i is not None:
-                if o_sub:
-                    return o_sub
-                assert new_i is not None
-                i = new_i
-                continue
-
-            # --iL (same as -iL): arbitrary hostlist file read.
-            if o == "--iL" or o.startswith("--iL="):
-                return (
-                    "--iL is disabled in safe mode (arbitrary file read); "
-                    f"set {_ENV_UNSAFE_CLI}=1 or use the targets parameter."
-                )
-
-            # Policy bypasses that do not start with --script.
-            _blocked_long_exact = (
-                "--resume",
-                "--iR",
-                "--proxies",
-                "--proxy",
-                "--sI",
-            )
-            for bl in _blocked_long_exact:
-                if o == bl or o.startswith(bl + "="):
-                    return (
-                        f"{bl} is disabled in MCP safe mode (file read, random "
-                        f"targets, proxying, or idle scan); set {_ENV_UNSAFE_CLI}=1."
-                    )
-
-            base = o.split("=", 1)[0]
-            blocked_long = {
-                "--datadir",
-                "--servicedb",
-                "--versiondb",
-                "--stylesheet",
-                "--excludefile",
-            }
-            if base in blocked_long or any(
-                o == x or o.startswith(x + "=") for x in blocked_long
-            ):
-                return (
-                    f"{base} is disabled by default; set {_ENV_UNSAFE_CLI}=1 to allow."
-                )
-            if base == "--siem-log":
-                val = o.split("=", 1)[1] if "=" in o else None
-                if val is None:
-                    if i + 1 >= n:
-                        return "--siem-log requires a value."
-                    val = scan_options[i + 1]
-                    i += 1
-                if val != "-":
-                    return (
-                        "only --siem-log - (stdout) is allowed in safe mode; "
-                        f"set {_ENV_UNSAFE_CLI}=1 for file paths."
-                    )
-            if base == "--append-output":
-                return (
-                    f"--append-output is disabled in safe mode; set {_ENV_UNSAFE_CLI}=1."
-                )
-            i += 1
+            err, i = _policy_long_option_safe_mode(o, scan_options, i, n)
+            if err:
+                return err
             continue
 
-        # Short options: -iL (input file), -A (script+os+traceroute), -o* outputs
         if o == "-iL" or o.startswith("-iL="):
             return (
                 "-iL is disabled in safe mode (arbitrary file read); "
@@ -302,46 +369,17 @@ def _scan_options_policy_error(scan_options: list[str]) -> str | None:
                 f"set {_ENV_UNSAFE_CLI}=1 to allow."
             )
         if o.startswith("-s") and len(o) > 2:
-            # -sC / -sSC ... enables default scripts
             if "C" in o[2:]:
                 return (
                     "-sC (script scan) is disabled in safe mode; "
                     f"set {_ENV_UNSAFE_CLI}=1 to allow."
                 )
 
-        # -oN / -oG / -oX / -oS / -oM / -oA / -oH and combined forms
-        if len(o) >= 3 and o[0:2] == "-o" and o[2] in "NGXSAMH":
-            kind = o[2]
-            if kind in "AH":
-                return f"-o{kind} is disabled in safe mode; set {_ENV_UNSAFE_CLI}=1."
-            rest = o[3:]
-            if rest == "":
-                if i + 1 >= n:
-                    return f"{o[:3]} requires a filename (use - for stdout)."
-                out = scan_options[i + 1]
-                if out != "-":
-                    return (
-                        "in safe mode only stdout output is allowed "
-                        f"({o[:3]} -); set {_ENV_UNSAFE_CLI}=1 for files."
-                    )
-                i += 2
-                continue
-            if rest.startswith("="):
-                out = rest[1:]
-                if out != "-":
-                    return (
-                        "in safe mode only stdout output is allowed "
-                        f"({o[:3]}=-); set {_ENV_UNSAFE_CLI}=1 for files."
-                    )
-                i += 1
-                continue
-            # -oG/path style
-            if rest != "-":
-                return (
-                    "in safe mode only stdout output is allowed "
-                    f"({o[:3]}-); set {_ENV_UNSAFE_CLI}=1 for files."
-                )
-            i += 1
+        so_err, new_i = _policy_short_o_output_error(o, scan_options, i, n)
+        if so_err is not None:
+            return so_err
+        if new_i is not None:
+            i = new_i
             continue
 
         i += 1

@@ -1,5 +1,17 @@
 #Nmap Changelog ($Id$); -*-text-*-
 
+o [nmap-ppro][SIEM] NDJSON events now include schema_version (1) and ts (UTC
+  ISO-8601) on every line; siem_log.cc uses a shared envelope builder. Opening
+  --siem-log file failure is a warning only (scan continues; syslog-only still
+  works). Documented in docs/nmap.1.
+
+o [nmap-ppro][MCP] Safe-mode scan option checks use module-level blocklist tables
+  plus _policy_long_option_safe_mode / _policy_short_o_output_error; added
+  maintainer tests (blocklist coverage, fuzz stability; live nmap --siem-log
+  schema check when NMAP_MCP_TEST_LIVE_SIEM=1). Long-form --o* stdout success
+  returns ("", new_i); treat empty o_sub as success so the scan index advances
+  (avoids infinite loop on argv like --oX -).
+
 o [nmap-ppro] Decoy scanning hardening: --decoy-stagger <usec> and
   --decoy-stagger-random spread -D decoy packets in time (default remains
   back-to-back) to reduce synchronized bursts against rate-based IDS. IPv4 raw

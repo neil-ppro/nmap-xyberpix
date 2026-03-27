@@ -2142,7 +2142,20 @@ on Windows\&.
 .RS 4
 Append a newline\-delimited JSON log of scan events to
 \fIfile\fR
-for ingestion by security analytics platforms (Splunk, Elastic, etc\&.)\&. Events include
+for ingestion by security analytics platforms (Splunk, Elastic, etc\&.)\&. Each line is a JSON object with integer
+\fBschema_version\fR
+(currently 1 for forward\-compatible parsing),
+\fBts\fR
+(UTC ISO\-8601 timestamp),
+\fBevent\fR
+(type name),
+\fBscan_id\fR,
+\fBscanner_hostname\fR,
+and optional
+\fB\-\-siem\-tag\fR
+label as
+\fBtag\fR,
+followed by event\-specific fields\&. Events include
 \fBscan_start\fR
 (with command line, scanner host name, and Nmap version),
 \fBhost\fR
@@ -2157,7 +2170,11 @@ and
 \fBscan_end\fR
 (host counts and elapsed time)\&. Use
 \fB\-\fR
-as the file name to write events to standard output\&. Forward the file with your log shipper or use
+as the file name to write events to standard output\&. If
+\fIfile\fR
+cannot be opened, Nmap prints a warning and continues the scan without SIEM file output (use
+\fB\-\-siem\-syslog\fR
+or fix permissions/path)\&. Forward the file with your log shipper or use
 \fB\-\-siem\-syslog\fR\&.
 .RE
 .PP
