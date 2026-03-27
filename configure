@@ -692,6 +692,10 @@ PCAP_DIST_CLEAN
 PCAP_CLEAN
 PCAP_BUILD
 OPENSSL_LIBS
+NFUZZ_CLEAN
+UNINSTALLNFUZZ
+INSTALLNFUZZ
+BUILDNFUZZ
 NPING_DIST_CLEAN
 NPING_CLEAN
 UNINSTALLNPING
@@ -799,6 +803,7 @@ with_localdirs
 with_ndiff
 with_zenmap
 with_nping
+with_nfuzz
 with_openssl
 with_libpcap
 with_libpcre
@@ -1468,6 +1473,7 @@ Optional Packages:
   --without-ndiff         Skip installation of the Ndiff utility
   --without-zenmap        Skip installation of the Zenmap graphical frontend
   --without-nping         Skip installation of the Nping utility
+  --without-nfuzz         Do not build the nfuzz raw IPv4 fuzzer
   --with-openssl=DIR      Use optional openssl libs and includes from
                           [DIR]/lib/ and [DIR]/include/openssl/)
   --with-libpcap=DIR      Look for pcap in DIR/include and DIR/libs.
@@ -6852,6 +6858,38 @@ subdirs="$subdirs nping"
 fi
 
 
+
+
+
+
+
+# nmap-ppro: nfuzz — raw IPv4 packet fuzzer (Unix; not MinGW)
+
+# Check whether --with-nfuzz was given.
+if test ${with_nfuzz+y}
+then :
+  withval=$with_nfuzz;
+else case e in #(
+  e) with_nfuzz=yes ;;
+esac
+fi
+
+case "$host" in
+  *-*-mingw32*|*-*-cygwin*)
+    with_nfuzz="no"
+    ;;
+esac
+if test "$with_nfuzz" = "no"; then
+  BUILDNFUZZ=""
+  INSTALLNFUZZ=""
+  UNINSTALLNFUZZ=""
+  NFUZZ_CLEAN=""
+else
+  BUILDNFUZZ=build-nfuzz
+  INSTALLNFUZZ=install-nfuzz
+  UNINSTALLNFUZZ=uninstall-nfuzz
+  NFUZZ_CLEAN=clean-nfuzz
+fi
 
 
 

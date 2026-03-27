@@ -1,5 +1,24 @@
 #Nmap Changelog ($Id$); -*-text-*-
 
+o [nmap-ppro] nfuzz --http-daemon: minimal HTTP server that serves a new fuzzed
+  HTML/JS page per request (meta refresh, malformed markup, random JS blobs, DOM
+  API probes) for authorized browser/DOM/JS testing; default bind 127.0.0.1:8787,
+  --http-allow-remote for non-loopback, optional --detach and --pid-file.
+  Documented in nfuzz(1), README-nmap-ppro.md, SECURITY-OVERVIEW.md.
+
+o [nmap-ppro] Optional nfuzz utility: single-file C binary plus nfuzz(1) for
+  raw IPv4 datagram mutation (IP_HDRINCL), checksum repair, rate limiting, and
+  explicit --authorized / NFUZZ_AUTHORIZED=1 gating. Integrated into configure
+  (--without-nfuzz) and top-level Makefile (install/uninstall); skipped on
+  MinGW/Cygwin. Documented in README-nmap-ppro.md and docs/security/
+  SECURITY-OVERVIEW.md.
+
+o [nmap-ppro][NSE] Added proto-generic-fuzzer (intrusive, gated by
+  proto-generic-fuzzer.unsafe=1) and nselib/proto_fuzz.lua: TCP/UDP/SSL sends
+  with pluggable mutation strategies, iteration/chain limits, optional connection
+  reuse. Documented in docs/nse-offsec-scripts.md; not on the MCP offsec
+  allowlist.
+
 o [Zenmap][nmap-ppro] Documented GTK 3 / PyGObject stack and distro packages in
   docs/ZENMAP-INSTALL.md; optional zenmap/requirements.txt for venvs. Profile
   Editor adds “Compare to profile…” (unified diff of normalized commands).

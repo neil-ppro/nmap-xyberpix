@@ -1,0 +1,170 @@
+.TH NFUZZ 1 "March 2026" "nmap-ppro" "User Commands"
+.SH NAME
+nfuzz \- raw IPv4 packet mutation harness and optional HTTP browser\-fuzz server (nmap-ppro)
+.SH SYNOPSIS
+.SS Raw IPv4 mode
+.B nfuzz
+.RB [ \-\-authorized ]
+.RB [ \-\-dst
+.IR ADDR ]
+.RB [ \-\-hex
+.IR HEX | \-\-hex\-file
+.IR PATH ]
+.RI [ options ]
+.SS HTTP browser fuzz daemon
+.B nfuzz
+.B \-\-authorized
+.B \-\-http-daemon
+.RI [ http-options ]
+.SH DESCRIPTION
+.B nfuzz
+has two modes. In
+.B raw
+mode it sends mutated IPv4 datagrams using a raw socket
+.RB ( IP_HDRINCL ).
+In
+.B HTTP
+mode it listens on a TCP port and serves a
+.B new
+HTML document (with embedded fuzzed JavaScript and stressed markup) on every
+request, so a browser pointed at the URL continuously exercises the DOM, HTML,
+and JS parsers (use only in an authorized lab).
+.PP
+You must pass
+.B \-\-authorized
+or set
+.B NFUZZ_AUTHORIZED=1
+in the environment before the tool will run.
+.PP
+Raw mode: the base packet is hexadecimal (see
+.BR \-\-hex " or " \-\-hex\-file ).
+The IPv4 version nibble must be 4. Typical use requires superuser privileges.
+HTTP mode does not require raw socket privileges.
+.SH OPTIONS
+.TP
+.BR \-\-authorized
+Required acknowledgement of legal authorization (or
+.BR NFUZZ_AUTHORIZED=1 ).
+.SS HTTP daemon
+.TP
+.B \-\-http\-daemon
+Run the HTTP fuzz server instead of raw IPv4 sends.
+.TP
+.BI \-\-http\-bind " HOST:PORT"
+Listen address (default
+.BR 127.0.0.1:8787 ).
+Non\-loopback binds require
+.BR \-\-http\-allow\-remote .
+.TP
+.BI \-\-http\-max\-body " N"
+Maximum HTML body size in bytes (default 262144, max 524288).
+.TP
+.BI \-\-http\-refresh " SEC"
+HTML meta refresh interval to reload
+.B /
+(0 disables; default 2).
+.TP
+.B \-\-http\-allow\-remote
+Allow binding outside 127.0.0.0/8 (authorized environments only).
+.TP
+.B \-\-detach
+Double\-fork to the background and detach from the terminal (HTTP mode only).
+.TP
+.BI \-\-pid\-file " PATH"
+Write the process ID after the server is listening (HTTP mode; useful with
+.BR \-\-detach ).
+.SS Raw IPv4 mode
+.TP
+.BI \-\-dst " ADDR"
+Destination IPv4 address (used for
+.BR sendto (2)
+and, with
+.BR \-\-patch\-addresses ,
+written into the IPv4 header).
+.TP
+.BI \-\-src " ADDR"
+When combined with
+.BR \-\-patch\-addresses ,
+overwrites the IPv4 source field (bytes 12\(en15).
+.TP
+.B \-\-patch-addresses
+Patch IPv4 header source/destination from
+.B \-\-src
+and
+.BR \-\-dst .
+.TP
+.BI \-\-hex " STRING"
+Base datagram as an even\-length hex string (whitespace may appear only outside
+the argument; use
+.B \-\-hex\-file
+for free\-form hex files).
+.TP
+.BI \-\-hex\-file " PATH"
+Read base datagram from a file; non\-hex characters are treated as whitespace
+and ignored.
+.TP
+.BI \-c ", " \-\-count " N"
+Number of packets to send (default 1, maximum 10,000,000).
+.TP
+.BI \-r ", " \-\-rate " RATE"
+Sleep between packets to approximate
+.I RATE
+packets per second (0 = no limit).
+.TP
+.BI \-s ", " \-\-seed " N"
+PRNG seed (default derived from time).
+.TP
+.BI \-S ", " \-\-strategy " NAME"
+Mutation:
+.BR bitflip ", " random_byte ", " inc_byte ", " dec_byte ", " truncate ", " append_random ", " shuffle_block .
+.TP
+.BI \-m ", " \-\-mutable\-off " O"
+Start offset of the mutable region (default: end of IPv4 header).
+.TP
+.BI \-l ", " \-\-mutable\-len " L"
+Length of mutable region (default: through packet end).
+.TP
+.B \-\-fix\-ip\-len
+Set IPv4 total length from buffer length (default: on).
+.TP
+.B \-\-no\-fix\-ip\-len
+.TP
+.B \-\-fix\-checksums
+Recompute IPv4 header checksum (default: on).
+.TP
+.B \-\-no\-fix\-checksums
+.TP
+.B \-\-fix\-l4
+Recompute UDP or TCP checksum when protocol is 17 or 6.
+.TP
+.BR \-h ", " \-\-help
+Print help and exit.
+.TP
+.BR \-V ", " \-\-version
+Print version and exit.
+.SH ENVIRONMENT
+.TP
+.B NFUZZ_AUTHORIZED
+If set to
+.BR 1 ,
+equivalent to
+.BR \-\-authorized .
+.SH EXIT STATUS
+0 on success, non\-zero on usage errors, privilege/socket failures, or send errors.
+.SH NOTES
+.B nfuzz
+does not perform IPv6 or link\-layer framing in the raw path. The HTTP server is
+IPv4 only and is intentionally minimal (no TLS). It is not a replacement for
+dedicated browser fuzzing frameworks; it complements higher\-level tools such as
+the
+.B proto\-generic\-fuzzer
+NSE script.
+.PP
+Browser fuzzing can crash tabs or the whole browser; run only on disposable
+profiles and isolated VMs.
+.SH SEE ALSO
+.BR nmap (1),
+.BR nping (1),
+.BR pcap (3pcap)
+.SH AUTHOR
+nmap\-ppro

@@ -48,13 +48,17 @@ Every script below is **optional** and must be run only with **written authoriza
 | `http-oauth-misconfig` | no | optional **`http-oauth-misconfig.basepath=`** (must pass `http_offsec` checks) | `assert_safe_basepath`, `assert_safe_http_request_path` on full path | **no** — use full Nmap CLI or `NMAP_MCP_ALLOW_UNSAFE_CLI` |
 | `http-websocket-hunt` | no | optional **`http-websocket-hunt.basepath=`** (same checks) | `assert_safe_basepath`, `assert_safe_http_request_path` | **no** |
 | `tls-clientcert-optional-downgrade` | no | optional **`tls-clientcert-optional-downgrade.basepath=`** (prefix for probe paths) | `assert_safe_basepath`, `assert_safe_http_request_path` | **no** |
+| `proto-generic-fuzzer` | yes | **`proto-generic-fuzzer.unsafe=1`**, **`payload_hex=`** and/or **`random_len=`**; optional **`strategies=`**, **`iterations=`** (≤500), **`chain_depth=`**, **`transport=`** (`tcp`/`udp`/`ssl`), **`reuse=`**, **`delay_ms=`**, **`recv=`**, **`recv_bytes=`**, **`seed=`** | — (non-HTTP; use `intrusive_gate` only) | **no** — use full Nmap CLI |
+
+For **layer-3** IPv4 mutation at high send rates, use the optional **`nfuzz`**
+binary (see **`nfuzz(1)`** and [SECURITY-OVERVIEW.md](security/SECURITY-OVERVIEW.md)); the **`proto-generic-fuzzer`** script operates at **connected TCP/UDP/SSL**.
 
 **MCP allowlist** scripts are enforced in `mcp_nmap/server.py` (`_OFFSEC_ALLOWED_SCRIPTS` and preset `options`). Other scripts in this table ship with the fork but are **not** exposed through `nmap_offsec_*` tools unless you extend the allowlist and run **`python3 maint/check_offsec_mcp_sync.py`** (and CI).
 
 ### Maintainer checklist (new or changed scripts)
 
 1. If the script uses HTTP with user-influenced paths, prefer **`http_offsec.assert_safe_http_request_path`** / **`assert_safe_basepath`** (see `nselib/http_offsec.lua`).
-2. If the script is intrusive, use **`http_offsec.intrusive_gate`** and document **`SCRIPT_NAME.unsafe=1`** in this file.
+2. If the script is intrusive, use **`http_offsec.intrusive_gate`** and document **`SCRIPT_NAME.unsafe=1`** in this file (including non-HTTP scripts such as **`proto-generic-fuzzer`**).
 3. If the script should appear in **MCP offsec presets**, add the basename to **`_OFFSEC_ALLOWED_SCRIPTS`**, extend **`_OFFSEC_PRESETS`**, and run **`maint/check_offsec_mcp_sync.py`** so `scripts/*.nse` and this doc stay aligned.
 4. Add a row to the table above with **Intrusive**, **script-args**, and **MCP allowlist** columns.
 

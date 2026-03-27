@@ -349,6 +349,29 @@ AC_SUBST(UNINSTALLNPING)
 AC_SUBST(NPING_CLEAN)
 AC_SUBST(NPING_DIST_CLEAN)
 
+# nmap-ppro: nfuzz — raw IPv4 packet fuzzer (Unix; not MinGW)
+AC_ARG_WITH(nfuzz, AC_HELP_STRING([--without-nfuzz], [Do not build the nfuzz raw IPv4 fuzzer]), [], [with_nfuzz=yes])
+case "$host" in
+  *-*-mingw32*|*-*-cygwin*)
+    with_nfuzz="no"
+    ;;
+esac
+if test "$with_nfuzz" = "no"; then
+  BUILDNFUZZ=""
+  INSTALLNFUZZ=""
+  UNINSTALLNFUZZ=""
+  NFUZZ_CLEAN=""
+else
+  BUILDNFUZZ=build-nfuzz
+  INSTALLNFUZZ=install-nfuzz
+  UNINSTALLNFUZZ=uninstall-nfuzz
+  NFUZZ_CLEAN=clean-nfuzz
+fi
+AC_SUBST(BUILDNFUZZ)
+AC_SUBST(INSTALLNFUZZ)
+AC_SUBST(UNINSTALLNFUZZ)
+AC_SUBST(NFUZZ_CLEAN)
+
 # OpenSSL and NSE C modules can require dlopen
 AC_SEARCH_LIBS(dlopen, dl)
 

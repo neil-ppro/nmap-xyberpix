@@ -39,6 +39,10 @@ Curated **offsec presets** (`nmap_offsec_*`) use a fixed allowlisted `--script` 
 
 `--siem-log` writes **NDJSON** (one JSON object per line). Do not confuse with interactive Nmap stdout; ship lines that parse as JSON to your log pipeline. Failed SIEM **file** open emits a warning and the scan continues (syslog mirroring still works if enabled). See [SIEM-NDJSON-SCHEMA.md](../SIEM-NDJSON-SCHEMA.md).
 
+## nfuzz (raw IPv4 packet fuzzer + HTTP browser fuzz server)
+
+The optional **`nfuzz`** binary (built with Nmap on Unix unless `./configure --without-nfuzz`) can send **mutated IPv4 datagrams** via a raw socket **or** run **`--http-daemon`**, a small HTTP server that returns a **fresh fuzzed HTML/JS page** on every request (for authorized DOM/JS engine testing in a lab). By default the daemon binds to **loopback** only; **`--http-allow-remote`** is required to listen on other interfaces. It is **not** part of MCP and is not installed on MinGW/Cygwin builds. It refuses to run unless **`--authorized`** or **`NFUZZ_AUTHORIZED=1`** is set. Raw mode typically needs **superuser**; HTTP mode does not. Misuse can violate law or contract and can disrupt networks or crash browsers. See **`nfuzz(1)`**.
+
 ## NSE (offsec scripts)
 
 Use only on **authorized** targets. Intrusive scripts require explicit **`SCRIPT_NAME.unsafe=1`** (or equivalent) via `http_offsec.intrusive_gate` where applicable. Adding a new script to **MCP** presets requires updating the allowlist in `mcp_nmap/server.py` and running **`maint/check_offsec_mcp_sync.py`** (see [nse-offsec-scripts.md](../nse-offsec-scripts.md)).
