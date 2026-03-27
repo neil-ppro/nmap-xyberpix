@@ -1,4 +1,5 @@
 local http = require "http"
+local http_offsec = require "http_offsec"
 local json = require "json"
 local shortport = require "shortport"
 local stdnse = require "stdnse"
@@ -19,21 +20,8 @@ categories = {"discovery", "safe"}
 
 portrule = shortport.http
 
-local SENSITIVE = {
-  "admin", "delete", "upload", "internal", "debug", "exec", "token",
-  "password", "secret", "graphql", "swagger", "actuator", "jolokia",
-}
-
-local PATHS = {
-  "/openapi.json",
-  "/v3/api-docs",
-  "/v2/api-docs",
-  "/swagger.json",
-  "/api/swagger.json",
-  "/api-docs/swagger.json",
-  "/swagger/v1/swagger.json",
-  "/api/openapi.json",
-}
+local PATHS = http_offsec.openapi_paths()
+local SENSITIVE = http_offsec.sensitive_path_keywords()
 
 local function path_flags(path)
   local low = string.lower(path or "")
@@ -62,11 +50,19 @@ end
 
 action = function(host, port)
   local base = stdnse.get_script_args(SCRIPT_NAME .. ".basepath") or ""
+  local perr = http_offsec.assert_safe_basepath(base)
+  if perr then
+    return stdnse.format_output(false, perr)
+  end
   local found = {}
   local interesting = {}
 
   for _, p in ipairs(PATHS) do
     local path = base .. p
+    perr = http_offsec.assert_safe_http_request_path(path)
+    if perr then
+      return stdnse.format_output(false, perr)
+    end
     local resp = http.get(host, port, path)
     if resp and resp.status == 200 and resp.body and #resp.body > 20 then
       local ct = (resp.header and resp.header["content-type"]) or ""

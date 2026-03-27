@@ -1,5 +1,35 @@
 #Nmap Changelog ($Id$); -*-text-*-
 
+o [nmap-ppro][Security] mcp-nmap-server: extend safe-mode scan_options policy
+  for long --oN/--oG/--oX (same rules as short -o*), --iL, -iR/--iR, --resume,
+  --proxies/--proxy, and --sI. Documented in docs/security/
+  MCP-SCAN-OPTIONS-POLICY-BYPASS.md.
+
+o [nmap-ppro][Security] mcp-nmap-server: reject target strings that start with
+  '-' or Unicode dashes (Nmap getopt parses them as flags after real targets —
+  argv injection / safe-mode bypass). Forbid NUL in argv fragments. Documented
+  with PoC under docs/security/MCP-TARGET-ARGV-INJECTION.md.
+
+o [nmap-ppro][Security] nselib/http_offsec.lua: assert_safe_http_request_path /
+  assert_safe_basepath to block CRLF/NUL/whitespace in paths used with http.get
+  / http.post; applied in http-openapi-map, http-graphql-introspect,
+  http-ssrf-canary, http-cloud-metadata-reach, http-llm-proxy-leak.
+
+o [nmap-ppro][MCP] mcp-nmap-server: added nmap_offsec_list_presets,
+  nmap_offsec_dry_run, and nmap_offsec_run_scan for curated allowlisted NSE
+  without NMAP_MCP_ALLOW_UNSAFE_CLI; optional NMAP_MCP_DATADIR and
+  NMAP_MCP_OFFSEC_INTRUSIVE (with tool flag) for intrusive_canaries preset.
+  Documented in mcp-nmap-server/README.md and docs/nse-offsec-scripts.md.
+
+o [nmap-ppro] Added docs/nse-offsec-scripts.md (offsec NSE usage, intrusive
+  script-args gating, MCP pointers) and maint/nse_offsec_selftest.py (local HTTP
+  fixture + Nmap smoke checks). nselib/http_offsec.lua returns _ENV so
+  require(\"http_offsec\") yields the module table (matches other nselib modules).
+
+o [nmap-ppro] k8s-api-anon-audit.nse classifies TLS/connection failures,
+  401/403 with WWW-Authenticate, anonymous JSON vs other responses.
+  http-llm-proxy-leak.nse uses http_offsec.intrusive_gate and tighter reporting.
+
 o [nmap-ppro] Replaced strcpy/sprintf/strcat in output.cc and nse_fs.cc with
   bounded APIs; added configure --enable-asan and --enable-ubsan; maint/
   build-with-sanitizers.sh, run-clang-tidy.sh (needs compile_commands.json),

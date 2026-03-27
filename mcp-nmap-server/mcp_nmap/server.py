@@ -18,8 +18,9 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-# Characters that must not appear in any argv fragment (shell-injection hygiene).
-_FORBIDDEN_ARG_CHARS = frozenset("|;`$&\n\r")
+# Characters that must not appear in any argv fragment (shell-injection hygiene
+# and C argv NUL termination).
+_FORBIDDEN_ARG_CHARS = frozenset("|;`$&\n\r\0")
 
 # Optional env override for non-PATH nmap location.
 _ENV_NMAP_BINARY = "NMAP_MCP_BINARY"
@@ -31,10 +32,90 @@ _ENV_ALLOW_ANY = "NMAP_MCP_ALLOW_ANY_TARGET"
 # Allow --script, -A, -iL, arbitrary -o*/--siem-log paths, etc. Operators only.
 _ENV_UNSAFE_CLI = "NMAP_MCP_ALLOW_UNSAFE_CLI"
 
+# Optional --datadir for nmap-ppro tree (custom nselib/scripts without unsafe CLI).
+_ENV_DATADIR = "NMAP_MCP_DATADIR"
+
+# Belt-and-suspenders with allow_intrusive_offsec on offsec preset tools.
+_ENV_OFFSEC_INTRUSIVE = "NMAP_MCP_OFFSEC_INTRUSIVE"
+
 _DEFAULT_TIMEOUT = 120
 _MAX_TIMEOUT = 3600
 _MAX_ARG_LEN = 8192
 _MAX_ARGS = 64
+_MAX_PRESET_ID_LEN = 128
+
+# Curated nmap-ppro NSE scripts for MCP offsec presets (no full unsafe CLI).
+_OFFSEC_ALLOWED_SCRIPTS = frozenset(
+    {
+        "http-openapi-map",
+        "http-graphql-introspect",
+        "http-jwt-probe",
+        "http-ssrf-canary",
+        "http-cloud-metadata-reach",
+        "http-llm-proxy-leak",
+        "k8s-api-anon-audit",
+    }
+)
+
+_OFFSEC_PRESETS: dict[str, dict[str, Any]] = {
+    "http_discovery": {
+        "intrusive": False,
+        "description": (
+            "Version scan on common web ports with http-openapi-map, "
+            "http-graphql-introspect, and http-jwt-probe (dummy JWT in preset "
+            "script-args for prerule; override with care) (-oX -)."
+        ),
+        "options": [
+            "-sV",
+            "-Pn",
+            "-p",
+            "80,443,8080,8443",
+            "--script",
+            "http-openapi-map,http-graphql-introspect,http-jwt-probe",
+            "--script-args",
+            "http-jwt-probe.jwt=eyJhbGciOiJIUzI1NiJ9.e30.z",
+            "-oX",
+            "-",
+        ],
+    },
+    "k8s_api_audit": {
+        "intrusive": False,
+        "description": (
+            "Kubernetes-style API paths on 6443/8443/8001 with k8s-api-anon-audit (-oX -)."
+        ),
+        "options": [
+            "-sV",
+            "-Pn",
+            "-p",
+            "6443,8443,8001",
+            "--script",
+            "k8s-api-anon-audit",
+            "-oX",
+            "-",
+        ],
+    },
+    "intrusive_canaries": {
+        "intrusive": True,
+        "description": (
+            "Intrusive: http-ssrf-canary, http-cloud-metadata-reach, "
+            "http-llm-proxy-leak (requires script unsafe=1 args). Requires "
+            f"{_ENV_OFFSEC_INTRUSIVE}=1 and allow_intrusive_offsec=true."
+        ),
+        "options": [
+            "-sV",
+            "-Pn",
+            "-p",
+            "80,443,8080,8443",
+            "--script",
+            "http-ssrf-canary,http-cloud-metadata-reach,http-llm-proxy-leak",
+            "--script-args",
+            "http-ssrf-canary.unsafe=1,http-cloud-metadata-reach.unsafe=1,"
+            "http-llm-proxy-leak.unsafe=1",
+            "-oX",
+            "-",
+        ],
+    },
+}
 
 
 def _nmap_binary() -> str:
@@ -71,6 +152,47 @@ def _unsafe_cli_allowed() -> bool:
     return os.environ.get(_ENV_UNSAFE_CLI, "").strip() == "1"
 
 
+def _policy_long_o_output_error(
+    o: str, scan_options: list[str], i: int, n: int
+) -> tuple[str | None, int | None]:
+    """
+    Apply the same rules as short -oN/-oG/... for long --oN/--oG/... forms.
+    Returns (None, None) if ``o`` is not a long --o* output option.
+    Returns (error_message, None) on policy violation.
+    Returns ("", new_i) on success (stdout only); caller must set i = new_i.
+    """
+    if not (len(o) >= 4 and o.startswith("--o") and o[3] in "NGXSAMH"):
+        return None, None
+    kind = o[3]
+    if kind in "AH":
+        return (
+            f"--o{kind} is disabled in safe mode; set {_ENV_UNSAFE_CLI}=1.",
+            None,
+        )
+    suffix = o[4:]
+    out: str
+    step = 1
+    if suffix.startswith("="):
+        out = suffix[1:]
+    elif suffix == "":
+        if i + 1 >= n:
+            return (
+                f"--o{kind} requires a filename (use - for stdout).",
+                None,
+            )
+        out = scan_options[i + 1]
+        step = 2
+    else:
+        out = suffix
+    if out != "-":
+        return (
+            "in safe mode only stdout output is allowed "
+            f"for --o{kind} (-); set {_ENV_UNSAFE_CLI}=1 for files.",
+            None,
+        )
+    return "", i + step
+
+
 def _scan_options_policy_error(scan_options: list[str]) -> str | None:
     """
     Reject scan flags that enable arbitrary code (NSE), arbitrary file reads,
@@ -99,6 +221,37 @@ def _scan_options_policy_error(scan_options: list[str]) -> str | None:
                     f"script options are disabled by default; set "
                     f"{_ENV_UNSAFE_CLI}=1 on the server to allow them."
                 )
+            # Long --oN/--oG/... bypassed the short -o* branch; mirror that policy.
+            o_sub, new_i = _policy_long_o_output_error(o, scan_options, i, n)
+            if o_sub is not None or new_i is not None:
+                if o_sub:
+                    return o_sub
+                assert new_i is not None
+                i = new_i
+                continue
+
+            # --iL (same as -iL): arbitrary hostlist file read.
+            if o == "--iL" or o.startswith("--iL="):
+                return (
+                    "--iL is disabled in safe mode (arbitrary file read); "
+                    f"set {_ENV_UNSAFE_CLI}=1 or use the targets parameter."
+                )
+
+            # Policy bypasses that do not start with --script.
+            _blocked_long_exact = (
+                "--resume",
+                "--iR",
+                "--proxies",
+                "--proxy",
+                "--sI",
+            )
+            for bl in _blocked_long_exact:
+                if o == bl or o.startswith(bl + "="):
+                    return (
+                        f"{bl} is disabled in MCP safe mode (file read, random "
+                        f"targets, proxying, or idle scan); set {_ENV_UNSAFE_CLI}=1."
+                    )
+
             base = o.split("=", 1)[0]
             blocked_long = {
                 "--datadir",
@@ -137,6 +290,11 @@ def _scan_options_policy_error(scan_options: list[str]) -> str | None:
             return (
                 "-iL is disabled in safe mode (arbitrary file read); "
                 f"set {_ENV_UNSAFE_CLI}=1 or use the targets parameter."
+            )
+        if o.startswith("-iR"):
+            return (
+                "-iR (random targets) is disabled in MCP safe mode "
+                f"(bypasses target allowlisting); set {_ENV_UNSAFE_CLI}=1."
             )
         if o == "-A":
             return (
@@ -191,13 +349,196 @@ def _scan_options_policy_error(scan_options: list[str]) -> str | None:
     return None
 
 
+_PORT_SPEC_RE = re.compile(r"^[\d,\-TU:*/]+$")
+
+
+def _offsec_datadir_prefix() -> list[str]:
+    raw = os.environ.get(_ENV_DATADIR, "").strip()
+    if not raw:
+        return []
+    _validate_argv_fragment(raw, label=_ENV_DATADIR)
+    p = os.path.realpath(raw)
+    if not os.path.isdir(p):
+        raise ValueError(
+            f"{_ENV_DATADIR} must be an existing directory (resolved to {p!r})."
+        )
+    return ["--datadir", p]
+
+
+def _validate_offsec_extra_scan_options(scan_options: list[str]) -> str | None:
+    """Allow only a narrow set of tuning flags (no --script, -o*, -A, etc.)."""
+    n = len(scan_options)
+    i = 0
+    while i < n:
+        o = scan_options[i]
+        if o in ("-Pn", "-n", "--open", "-sV", "-sT", "-sS"):
+            i += 1
+            continue
+        if re.fullmatch(r"-T[0-5]", o):
+            i += 1
+            continue
+        if o.startswith("--max-retries"):
+            if "=" in o:
+                val = o.split("=", 1)[1]
+            else:
+                if i + 1 >= n:
+                    return "--max-retries requires a value."
+                val = scan_options[i + 1]
+                i += 1
+            if not val.isdigit():
+                return "--max-retries value must be digits only."
+            i += 1
+            continue
+        if o.startswith("-p"):
+            spec: str
+            if o == "-p":
+                if i + 1 >= n:
+                    return "-p requires a port specification."
+                spec = scan_options[i + 1]
+                i += 2
+            else:
+                spec = o[2:].lstrip("=")
+                if not spec:
+                    return "-p requires a port specification."
+                i += 1
+            if len(spec) > 512 or not _PORT_SPEC_RE.match(spec):
+                return "Invalid -p port specification in extra_scan_options."
+            continue
+        return (
+            f"offsec extra_scan_options allows only -p, -Pn, -n, --open, "
+            f"-sV/-sT/-sS, -T0..-T5, --max-retries; disallowed: {o!r}"
+        )
+    return None
+
+
+def _offsec_intrusive_ok(
+    preset: dict[str, Any], *, allow_intrusive_offsec: bool
+) -> tuple[bool, str]:
+    if not preset.get("intrusive"):
+        return True, ""
+    env_ok = os.environ.get(_ENV_OFFSEC_INTRUSIVE, "").strip() == "1"
+    if allow_intrusive_offsec and env_ok:
+        return True, ""
+    return (
+        False,
+        f'Preset is intrusive; set allow_intrusive_offsec=true and server env '
+        f"{_ENV_OFFSEC_INTRUSIVE}=1.",
+    )
+
+
+def _offsec_verify_preset_script_list(options: list[str]) -> str | None:
+    """Ensure built-in preset --script values use only allowlisted NSE names."""
+    i = 0
+    n = len(options)
+    while i < n:
+        o = options[i]
+        if o == "--script":
+            if i + 1 >= n:
+                return "preset definition: --script missing value"
+            raw = options[i + 1]
+            i += 2
+        elif o.startswith("--script="):
+            raw = o.split("=", 1)[1]
+            i += 1
+        else:
+            i += 1
+            continue
+        for part in raw.split(","):
+            name = part.strip()
+            if not name:
+                continue
+            if name not in _OFFSEC_ALLOWED_SCRIPTS:
+                return f"preset references disallowed script {name!r}"
+    return None
+
+
+def _validate_offsec_preset_id(preset_id: str) -> str | None:
+    try:
+        _validate_argv_fragment(preset_id, label="preset_id")
+    except ValueError as e:
+        return str(e)
+    if len(preset_id) > _MAX_PRESET_ID_LEN:
+        return f"preset_id exceeds maximum length ({_MAX_PRESET_ID_LEN})."
+    return None
+
+
+def _offsec_build_scan_argv(
+    preset_id: str,
+    extra_scan_options: list[str],
+    *,
+    allow_intrusive_offsec: bool,
+) -> tuple[list[str] | None, str | None]:
+    pid_err = _validate_offsec_preset_id(preset_id)
+    if pid_err:
+        return None, pid_err
+    preset = _OFFSEC_PRESETS.get(preset_id)
+    if not preset:
+        ids = ", ".join(sorted(_OFFSEC_PRESETS))
+        return None, f"Unknown preset_id {preset_id!r}. Known: {ids}"
+
+    ok_i, err_i = _offsec_intrusive_ok(preset, allow_intrusive_offsec=allow_intrusive_offsec)
+    if not ok_i:
+        return None, err_i
+
+    pol_extra = _validate_offsec_extra_scan_options(extra_scan_options)
+    if pol_extra:
+        return None, pol_extra
+
+    preset_opts = list(preset["options"])
+    bad_scripts = _offsec_verify_preset_script_list(preset_opts)
+    if bad_scripts:
+        return None, bad_scripts
+
+    try:
+        dd = _offsec_datadir_prefix()
+    except ValueError as e:
+        return None, str(e)
+
+    scan_options = dd + preset_opts + list(extra_scan_options)
+    try:
+        _validate_scan_options(scan_options)
+    except ValueError as e:
+        return None, str(e)
+
+    return scan_options, None
+
+
+def _validate_target_entry(s: str, *, label: str) -> None:
+    """
+    Targets are appended after scan_options. Nmap uses getopt_long_only and
+    continues to parse arguments that look like options even after real targets,
+    so a value like '-oN' or '--script' is treated as a flag, not a hostname
+    (argument injection / policy bypass). Reject any target that could be
+    mistaken for an option or a Unicode-dash variant Nmap rejects.
+    """
+    _validate_argv_fragment(s, label=label)
+    t = s.strip()
+    if not t:
+        raise ValueError(f"{label} must not be empty or whitespace-only.")
+    if t == "--":
+        raise ValueError(f'{label} must not be "--".')
+    if t[0] in "-\u2010\u2011\u2012\u2013\u2014\u2015":
+        raise ValueError(
+            f"{label} must not start with '-' or a Unicode dash; "
+            "Nmap would parse it as a CLI option (argument injection)."
+        )
+    # Match nmap.cc preliminary check for UTF-8 dash (U+2010..U+2015).
+    b0 = ord(t[0])
+    if b0 == 0xE2 and len(t) >= 3:
+        b1, b2 = ord(t[1]), ord(t[2])
+        if b1 == 0x80 and 0x90 <= b2 <= 0x95:
+            raise ValueError(
+                f"{label} contains an unparseable Unicode dash (use ASCII '-')."
+            )
+
+
 def _validate_targets(targets: list[str]) -> None:
     if not targets:
         raise ValueError("At least one target is required.")
     if len(targets) > _MAX_ARGS:
         raise ValueError(f"Too many targets (max {_MAX_ARGS}).")
     for i, t in enumerate(targets):
-        _validate_argv_fragment(t, label=f"targets[{i}]")
+        _validate_target_entry(t, label=f"targets[{i}]")
 
 
 def _is_loopback_target(spec: str) -> bool:
@@ -289,7 +630,10 @@ mcp = FastMCP(
         f"{_ENV_ALLOW_ANY}=1. Never pass shell metacharacters in arguments. "
         "By default, scan_options cannot use NSE (--script, -A, -sC), -iL, "
         "arbitrary file outputs (-oA, -oN file, …), or most --datadir-style "
-        f"flags; set {_ENV_UNSAFE_CLI}=1 on the server to allow the full CLI."
+        f"flags; set {_ENV_UNSAFE_CLI}=1 on the server to allow the full CLI. "
+        "Curated nmap-ppro offsec presets (nmap_offsec_*) may run a fixed "
+        f"allowlisted --script set without unsafe CLI when {_ENV_DATADIR} points "
+        "at an nmap-ppro source tree (or install includes those scripts)."
     ),
 )
 
@@ -401,6 +745,127 @@ def nmap_run_scan(
 
     binary = _nmap_binary()
     argv = [binary] + list(scan_options) + list(targets)
+    out = _run_nmap(argv, timeout=timeout_seconds)
+    out["argv"] = argv
+    return out
+
+
+@mcp.tool()
+def nmap_offsec_list_presets() -> dict[str, Any]:
+    """List built-in nmap-ppro offensive-research scan presets (allowlisted NSE)."""
+    presets = []
+    for pid in sorted(_OFFSEC_PRESETS):
+        spec = _OFFSEC_PRESETS[pid]
+        presets.append(
+            {
+                "id": pid,
+                "intrusive": bool(spec.get("intrusive")),
+                "description": spec.get("description", ""),
+            }
+        )
+    return {
+        "ok": True,
+        "presets": presets,
+        "note": (
+            f"Use nmap_offsec_dry_run / nmap_offsec_run_scan. Set {_ENV_DATADIR} "
+            "to the nmap-ppro tree so Nmap loads fork scripts and nselib."
+        ),
+    }
+
+
+@mcp.tool()
+def nmap_offsec_dry_run(
+    preset_id: str,
+    targets: list[str],
+    network_scope: str = "loopback_only",
+    i_acknowledge_network_scan_risk: bool = False,
+    allow_intrusive_offsec: bool = False,
+    extra_scan_options: list[str] | None = None,
+) -> dict[str, Any]:
+    """
+    Like nmap_dry_run but uses a curated offsec preset (allowlisted --script only).
+
+    Intrusive presets require allow_intrusive_offsec=true and server env
+    NMAP_MCP_OFFSEC_INTRUSIVE=1. Optional NMAP_MCP_DATADIR selects the nmap-ppro
+    data directory (scripts + nselib).
+
+    extra_scan_options: only -p, -Pn, -n, --open, -sV/-sT/-sS, -T0..-T5,
+    --max-retries (numeric).
+    """
+    extras = list(extra_scan_options or [])
+    scan_options, err = _offsec_build_scan_argv(
+        preset_id,
+        extras,
+        allow_intrusive_offsec=allow_intrusive_offsec,
+    )
+    if err:
+        return {"ok": False, "error": err}
+    try:
+        _validate_targets(targets)
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+
+    if network_scope == "any" and not i_acknowledge_network_scan_risk:
+        return {
+            "ok": False,
+            "error": "network_scope \"any\" requires i_acknowledge_network_scan_risk=true.",
+        }
+
+    ok_scope, scope_err = _targets_allowed_for_scope(targets, network_scope)
+    if not ok_scope:
+        return {"ok": False, "error": scope_err}
+
+    binary = _nmap_binary()
+    argv = [binary] + scan_options + list(targets)
+    return {"ok": True, "argv": argv, "note": "Command not executed."}
+
+
+@mcp.tool()
+def nmap_offsec_run_scan(
+    preset_id: str,
+    targets: list[str],
+    network_scope: str = "loopback_only",
+    i_acknowledge_network_scan_risk: bool = False,
+    allow_intrusive_offsec: bool = False,
+    extra_scan_options: list[str] | None = None,
+    timeout_seconds: int = _DEFAULT_TIMEOUT,
+) -> dict[str, Any]:
+    """
+    Run Nmap with a curated nmap-ppro offsec preset (fixed allowlisted scripts).
+
+    See nmap_offsec_dry_run for policy. Output includes XML on stdout (-oX -).
+    """
+    extras = list(extra_scan_options or [])
+    scan_options, err = _offsec_build_scan_argv(
+        preset_id,
+        extras,
+        allow_intrusive_offsec=allow_intrusive_offsec,
+    )
+    if err:
+        return {"ok": False, "error": err}
+    try:
+        _validate_targets(targets)
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+
+    if timeout_seconds < 1 or timeout_seconds > _MAX_TIMEOUT:
+        return {
+            "ok": False,
+            "error": f"timeout_seconds must be 1..{_MAX_TIMEOUT}.",
+        }
+
+    if network_scope == "any" and not i_acknowledge_network_scan_risk:
+        return {
+            "ok": False,
+            "error": "network_scope \"any\" requires i_acknowledge_network_scan_risk=true.",
+        }
+
+    ok_scope, scope_err = _targets_allowed_for_scope(targets, network_scope)
+    if not ok_scope:
+        return {"ok": False, "error": scope_err}
+
+    binary = _nmap_binary()
+    argv = [binary] + scan_options + list(targets)
     out = _run_nmap(argv, timeout=timeout_seconds)
     out["argv"] = argv
     return out

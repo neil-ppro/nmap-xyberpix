@@ -1,4 +1,5 @@
 local http = require "http"
+local http_offsec = require "http_offsec"
 local json = require "json"
 local shortport = require "shortport"
 local stdnse = require "stdnse"
@@ -21,7 +22,7 @@ portrule = shortport.http
 
 local INTROSPECTION_BODY = '{"query":"{ __schema { queryType { name } mutationType { name } subscriptionType { name } types { name kind } } }"}'
 
-local ENDPOINTS = {"/graphql", "/api/graphql", "/v1/graphql", "/query", "/gql"}
+local ENDPOINTS = http_offsec.graphql_default_paths()
 
 local RISKY = {"password", "token", "secret", "user", "role", "admin", "file", "upload", "delete", "exec"}
 
@@ -47,8 +48,19 @@ end
 action = function(host, port)
   local base = stdnse.get_script_args(SCRIPT_NAME .. ".basepath") or ""
   local custom = stdnse.get_script_args(SCRIPT_NAME .. ".path")
-  local paths = custom and {custom} or {}
-  if not custom then
+  local paths = {}
+  local perr
+  if custom then
+    perr = http_offsec.assert_safe_http_request_path(custom)
+    if perr then
+      return stdnse.format_output(false, perr)
+    end
+    paths[1] = custom
+  else
+    perr = http_offsec.assert_safe_basepath(base)
+    if perr then
+      return stdnse.format_output(false, perr)
+    end
     for _, e in ipairs(ENDPOINTS) do
       paths[#paths + 1] = base .. e
     end
@@ -59,6 +71,10 @@ action = function(host, port)
   }
 
   for _, path in ipairs(paths) do
+    perr = http_offsec.assert_safe_http_request_path(path)
+    if perr then
+      return stdnse.format_output(false, perr)
+    end
     local resp = http.post(host, port, path, opts, nil, INTROSPECTION_BODY)
     if resp and resp.body then
       local ok, doc = pcall(json.parse, resp.body)
