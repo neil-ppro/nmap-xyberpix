@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nmap-mcp-server"
+version = "0.1.0"
+description = "MCP server exposing Nmap for AI agents (stdio); includes safety controls for scan execution."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.8.0",
+]
+
+[project.scripts]
+nmap-mcp-server = "mcp_nmap.server:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mcp_nmap*"]

@@ -37,6 +37,12 @@ o [Zenmap][nmap-ppro] The profile editor includes a "SIEM & scan policy" tab
   and renders these options so saved profiles and generated commands stay
   consistent with the nmap-ppro CLI.
 
+o [MCP][nmap-ppro] Added mcp-nmap-server/: a Python MCP (stdio) server for AI
+  agents with tools nmap_version, nmap_help, nmap_dry_run, nmap_run_scan, and
+  nmap_parse_xml_summary. Scans default to loopback-only targets; arbitrary
+  targets require tool acknowledgment plus NMAP_MCP_ALLOW_ANY_TARGET=1. See
+  mcp-nmap-server/README.md.
+
 o [GH#3280] Fix a performance regression in reverse-DNS in Nmap 7.98. The fix
   for #3130 had caused Nmap to send requests too slowly. [Daniel Miller]
 
