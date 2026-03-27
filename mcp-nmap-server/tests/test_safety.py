@@ -49,3 +49,31 @@ def test_dry_run_rejects_non_loopback_default_scope() -> None:
     r = nmap_dry_run(["-sn"], ["192.168.1.1"])
     assert r["ok"] is False
     assert "loopback" in r["error"].lower()
+
+
+def test_policy_blocks_script() -> None:
+    r = nmap_dry_run(["--script=default", "-sn"], ["127.0.0.1"])
+    assert r["ok"] is False
+    assert "script" in r["error"].lower()
+
+
+def test_policy_blocks_A_and_iL() -> None:
+    assert nmap_dry_run(["-A"], ["127.0.0.1"])["ok"] is False
+    assert nmap_dry_run(["-iL", "hosts.txt"], ["127.0.0.1"])["ok"] is False
+
+
+def test_policy_blocks_double_dash() -> None:
+    r = nmap_dry_run(["-sn", "--", "evil.example"], ["127.0.0.1"])
+    assert r["ok"] is False
+    assert "targets" in r["error"].lower()
+
+
+def test_policy_allows_stdout_oX() -> None:
+    r = nmap_dry_run(["-sn", "-oX", "-"], ["127.0.0.1"])
+    assert r["ok"] is True
+
+
+def test_unsafe_cli_env_allows_script(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NMAP_MCP_ALLOW_UNSAFE_CLI", "1")
+    r = nmap_dry_run(["--script=default", "-sn"], ["127.0.0.1"])
+    assert r["ok"] is True

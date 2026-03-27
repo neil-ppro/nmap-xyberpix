@@ -43,6 +43,18 @@ o [MCP][nmap-ppro] Added mcp-nmap-server/: a Python MCP (stdio) server for AI
   targets require tool acknowledgment plus NMAP_MCP_ALLOW_ANY_TARGET=1. See
   mcp-nmap-server/README.md.
 
+o [nmap-ppro] Added ten offensive-research oriented NSE scripts: http-openapi-map,
+  http-graphql-introspect, http-jwt-probe, http-websocket-hunt, http-oauth-misconfig,
+  http-ssrf-canary, http-cloud-metadata-reach, k8s-api-anon-audit,
+  tls-clientcert-optional-downgrade, and http-llm-proxy-leak. Use only on authorized
+  targets; several require script-args (JWT token, SSRF URL templates).
+
+o [MCP][nmap-ppro] Hardened mcp-nmap-server scan_options: default safe mode
+  blocks NSE (--script*, -A, -s*C), -iL/--excludefile, custom data paths, file
+  outputs except stdout (-oX -, etc.), --append-output, and '--' in options.
+  Set NMAP_MCP_ALLOW_UNSAFE_CLI=1 to restore unrestricted CLI for trusted
+  operators.
+
 o [GH#3280] Fix a performance regression in reverse-DNS in Nmap 7.98. The fix
   for #3130 had caused Nmap to send requests too slowly. [Daniel Miller]
 

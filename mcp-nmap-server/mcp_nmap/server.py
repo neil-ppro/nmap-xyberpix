@@ -28,6 +28,9 @@ _ENV_NMAP_BINARY = "NMAP_MCP_BINARY"
 # and suspenders with the MCP tool flag).
 _ENV_ALLOW_ANY = "NMAP_MCP_ALLOW_ANY_TARGET"
 
+# Allow --script, -A, -iL, arbitrary -o*/--siem-log paths, etc. Operators only.
+_ENV_UNSAFE_CLI = "NMAP_MCP_ALLOW_UNSAFE_CLI"
+
 _DEFAULT_TIMEOUT = 120
 _MAX_TIMEOUT = 3600
 _MAX_ARG_LEN = 8192
@@ -62,6 +65,130 @@ def _validate_scan_options(scan_options: list[str]) -> None:
         raise ValueError(f"Too many scan_options (max {_MAX_ARGS}).")
     for i, a in enumerate(scan_options):
         _validate_argv_fragment(a, label=f"scan_options[{i}]")
+
+
+def _unsafe_cli_allowed() -> bool:
+    return os.environ.get(_ENV_UNSAFE_CLI, "").strip() == "1"
+
+
+def _scan_options_policy_error(scan_options: list[str]) -> str | None:
+    """
+    Reject scan flags that enable arbitrary code (NSE), arbitrary file reads,
+    or arbitrary file writes unless NMAP_MCP_ALLOW_UNSAFE_CLI=1.
+    Targets must be passed only via the tool's targets parameter (no '--' in
+    scan_options).
+    """
+    if _unsafe_cli_allowed():
+        return None
+
+    n = len(scan_options)
+    i = 0
+    while i < n:
+        o = scan_options[i]
+
+        if o == "--":
+            return (
+                "scan_options must not contain '--'; pass targets only via "
+                "the targets parameter."
+            )
+
+        # Long options
+        if o.startswith("--"):
+            if o.startswith("--script"):
+                return (
+                    f"script options are disabled by default; set "
+                    f"{_ENV_UNSAFE_CLI}=1 on the server to allow them."
+                )
+            base = o.split("=", 1)[0]
+            blocked_long = {
+                "--datadir",
+                "--servicedb",
+                "--versiondb",
+                "--stylesheet",
+                "--excludefile",
+            }
+            if base in blocked_long or any(
+                o == x or o.startswith(x + "=") for x in blocked_long
+            ):
+                return (
+                    f"{base} is disabled by default; set {_ENV_UNSAFE_CLI}=1 to allow."
+                )
+            if base == "--siem-log":
+                val = o.split("=", 1)[1] if "=" in o else None
+                if val is None:
+                    if i + 1 >= n:
+                        return "--siem-log requires a value."
+                    val = scan_options[i + 1]
+                    i += 1
+                if val != "-":
+                    return (
+                        "only --siem-log - (stdout) is allowed in safe mode; "
+                        f"set {_ENV_UNSAFE_CLI}=1 for file paths."
+                    )
+            if base == "--append-output":
+                return (
+                    f"--append-output is disabled in safe mode; set {_ENV_UNSAFE_CLI}=1."
+                )
+            i += 1
+            continue
+
+        # Short options: -iL (input file), -A (script+os+traceroute), -o* outputs
+        if o == "-iL" or o.startswith("-iL="):
+            return (
+                "-iL is disabled in safe mode (arbitrary file read); "
+                f"set {_ENV_UNSAFE_CLI}=1 or use the targets parameter."
+            )
+        if o == "-A":
+            return (
+                "-A is disabled in safe mode (runs NSE); "
+                f"set {_ENV_UNSAFE_CLI}=1 to allow."
+            )
+        if o.startswith("-s") and len(o) > 2:
+            # -sC / -sSC ... enables default scripts
+            if "C" in o[2:]:
+                return (
+                    "-sC (script scan) is disabled in safe mode; "
+                    f"set {_ENV_UNSAFE_CLI}=1 to allow."
+                )
+
+        # -oN / -oG / -oX / -oS / -oM / -oA / -oH and combined forms
+        if len(o) >= 3 and o[0:2] == "-o" and o[2] in "NGXSAMH":
+            kind = o[2]
+            if kind in "AH":
+                return f"-o{kind} is disabled in safe mode; set {_ENV_UNSAFE_CLI}=1."
+            rest = o[3:]
+            if rest == "":
+                if i + 1 >= n:
+                    return f"{o[:3]} requires a filename (use - for stdout)."
+                out = scan_options[i + 1]
+                if out != "-":
+                    return (
+                        "in safe mode only stdout output is allowed "
+                        f"({o[:3]} -); set {_ENV_UNSAFE_CLI}=1 for files."
+                    )
+                i += 2
+                continue
+            if rest.startswith("="):
+                out = rest[1:]
+                if out != "-":
+                    return (
+                        "in safe mode only stdout output is allowed "
+                        f"({o[:3]}=-); set {_ENV_UNSAFE_CLI}=1 for files."
+                    )
+                i += 1
+                continue
+            # -oG/path style
+            if rest != "-":
+                return (
+                    "in safe mode only stdout output is allowed "
+                    f"({o[:3]}-); set {_ENV_UNSAFE_CLI}=1 for files."
+                )
+            i += 1
+            continue
+
+        i += 1
+
+    return None
 
 
 def _validate_targets(targets: list[str]) -> None:
@@ -159,7 +286,10 @@ mcp = FastMCP(
         "nmap_help before scanning. Use nmap_dry_run to validate commands. "
         "Default scans are restricted to loopback targets; wider scans require "
         "network_scope=any, i_acknowledge_network_scan_risk=true, and server env "
-        f"{_ENV_ALLOW_ANY}=1. Never pass shell metacharacters in arguments."
+        f"{_ENV_ALLOW_ANY}=1. Never pass shell metacharacters in arguments. "
+        "By default, scan_options cannot use NSE (--script, -A, -sC), -iL, "
+        "arbitrary file outputs (-oA, -oN file, …), or most --datadir-style "
+        f"flags; set {_ENV_UNSAFE_CLI}=1 on the server to allow the full CLI."
     ),
 )
 
@@ -191,12 +321,19 @@ def nmap_dry_run(
 
     network_scope: \"loopback_only\" (default) or \"any\" (requires env
     NMAP_MCP_ALLOW_ANY_TARGET=1 and i_acknowledge_network_scan_risk=true).
+
+    Safe mode blocks NSE, -iL, non-stdout -o*, etc.; see server env
+    NMAP_MCP_ALLOW_UNSAFE_CLI.
     """
     try:
         _validate_scan_options(scan_options)
         _validate_targets(targets)
     except ValueError as e:
         return {"ok": False, "error": str(e)}
+
+    pol = _scan_options_policy_error(scan_options)
+    if pol:
+        return {"ok": False, "error": pol}
 
     if network_scope == "any" and not i_acknowledge_network_scan_risk:
         return {
@@ -231,12 +368,20 @@ def nmap_run_scan(
 
     Recommended: include -oX - (or -oG -) in scan_options to capture machine-
     readable output in stdout for the agent.
+
+    Safe mode blocks NSE (--script, -A, -sC), -iL, file-based -o*/--siem-log,
+    and similar; set server env NMAP_MCP_ALLOW_UNSAFE_CLI=1 to allow the full
+    Nmap CLI (operators only).
     """
     try:
         _validate_scan_options(scan_options)
         _validate_targets(targets)
     except ValueError as e:
         return {"ok": False, "error": str(e)}
+
+    pol = _scan_options_policy_error(scan_options)
+    if pol:
+        return {"ok": False, "error": pol}
 
     if timeout_seconds < 1 or timeout_seconds > _MAX_TIMEOUT:
         return {

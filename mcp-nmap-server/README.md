@@ -60,7 +60,13 @@ Default policy only allows **loopback** targets (`127.0.0.1`, `::1`, `localhost`
 
 ## Security
 
-Nmap is a **network scanner**. This server uses `subprocess` with argument lists (no shell), blocks common injection characters in arguments, caps timeouts and argument counts, and defaults to loopback-only targets. Operators remain responsible for **who** can reach this MCP server and for **compliance** with policy and law.
+Nmap is a **network scanner**. This server uses `subprocess` with argument lists (no shell), blocks common injection characters in arguments, caps timeouts and argument counts, and defaults to loopback-only targets.
+
+**Safe CLI policy (default)** for `nmap_dry_run` / `nmap_run_scan`: disallows NSE and related flags (`--script*`, `-A`, `-sC` / any `-s…` containing `C`), `-iL` / `--excludefile`, custom `--datadir` / `--servicedb` / `--versiondb` / `--stylesheet`, `--append-output`, `--` (targets must use the `targets` parameter only), and file-writing `-o*` / `--siem-log` except **stdout** (`-oX -`, `-oG -`, `-oN -`, `-oS -`, `-oM -`, and `--siem-log -`).
+
+To allow the **full** Nmap option surface (operators only), set **`NMAP_MCP_ALLOW_UNSAFE_CLI=1`** on the MCP server process.
+
+Operators remain responsible for **who** can reach this MCP server and for **compliance** with policy and law.
 
 ## Tests
 

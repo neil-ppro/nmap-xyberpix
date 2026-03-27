@@ -610,3 +610,13 @@ Entry { filename = "xdmcp-discover.nse", categories = { "discovery", "safe", } }
 Entry { filename = "xmlrpc-methods.nse", categories = { "default", "discovery", "safe", } }
 Entry { filename = "xmpp-brute.nse", categories = { "brute", "intrusive", } }
 Entry { filename = "xmpp-info.nse", categories = { "default", "discovery", "safe", "version", } }
+Entry { filename = "http-cloud-metadata-reach.nse", categories = { "discovery", "intrusive", } }
+Entry { filename = "http-graphql-introspect.nse", categories = { "discovery", "safe", } }
+Entry { filename = "http-jwt-probe.nse", categories = { "discovery", "safe", } }
+Entry { filename = "http-llm-proxy-leak.nse", categories = { "discovery", "intrusive", } }
+Entry { filename = "http-oauth-misconfig.nse", categories = { "discovery", "safe", } }
+Entry { filename = "http-openapi-map.nse", categories = { "discovery", "safe", } }
+Entry { filename = "http-ssrf-canary.nse", categories = { "discovery", "intrusive", } }
+Entry { filename = "http-websocket-hunt.nse", categories = { "discovery", "safe", } }
+Entry { filename = "k8s-api-anon-audit.nse", categories = { "discovery", "safe", } }
+Entry { filename = "tls-clientcert-optional-downgrade.nse", categories = { "discovery", "safe", } }
