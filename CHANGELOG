@@ -1,5 +1,52 @@
 #Nmap Changelog ($Id$); -*-text-*-
 
+o [Zenmap][nmap-ppro] Documented GTK 3 / PyGObject stack and distro packages in
+  docs/ZENMAP-INSTALL.md; optional zenmap/requirements.txt for venvs. Profile
+  Editor adds “Compare to profile…” (unified diff of normalized commands).
+  Search window can export selected results as JSON (metadata summary).
+  Starting a scan shows an OK/Cancel warning when the command uses aggressive
+  or file-reading options (-A, -sC, --script*, -iL, --script-args-file).
+  maint/zenmap_profile_diff.py compares two saved profile commands on the CLI.
+
+o [Zenmap][nmap-ppro] maint/check_zenmap_siem_flags.py enforces nmap-ppro
+  options in profile_editor.xml, compares nmap.cc long_options (baseline) to
+  NmapOptions.LONG_OPTIONS via maint/data/zenmap-nmap-longopt-exceptions.txt,
+  and clarifies SIEM tab short_desc for --adaptive-rate and --auto-hostgroup.
+
+o [nmap-ppro][MCP] nmap_parse_xml_summary uses defusedxml (entity-safe) instead
+  of regex; caps returned hosts at 10,000; subprocess stdout/stderr capped by
+  default (2 MiB / 512 KiB) with optional NMAP_MCP_MAX_STDOUT_BYTES /
+  NMAP_MCP_MAX_STDERR_BYTES. Dependency: defusedxml. Tests in
+  mcp-nmap-server/tests/test_xml_parse.py; documented in mcp-nmap-server/README.md.
+
+o [nmap-ppro][SIEM] Added docs/examples/siem/README.md (jq, Splunk, Elastic/
+  Filebeat-oriented NDJSON notes); linked from SIEM-NDJSON-SCHEMA.md,
+  SECURITY-OVERVIEW.md, and README-nmap-ppro.md.
+
+o [nmap-ppro][NSE] http-oauth-misconfig, http-websocket-hunt, and
+  tls-clientcert-optional-downgrade validate basepath and full request paths
+  via http_offsec; tls script accepts optional basepath prefix for probes.
+
+o [nmap-ppro][CI] nmap-ppro-checks workflow: Windows MCP pytest job; SIEM smoke
+  uses upload-artifact/download-artifact so the binary is built once; long-options
+  baseline in maint/data/nmap-long-options-baseline.txt with
+  maint/check_mcp_longopt_baseline.py / maint/update_mcp_longopt_baseline.py;
+  shared parser maint/nmap_longopts_from_cc.py.
+
+o [nmap-ppro] Operator and maintainer tooling: docs/security/SECURITY-OVERVIEW.md
+  (MCP threat model and env vars), docs/SIEM-NDJSON-SCHEMA.md (field reference
+  and schema_version policy), docs/UPSTREAM-MERGE.md and maint/FORK-FILES.md /
+  maint/merge-upstream.sh for upstream merges; maint/check_zenmap_siem_flags.py
+  and maint/check_offsec_mcp_sync.py; maint/siem_ndjson_smoketest.sh; expanded
+  docs/nse-offsec-scripts.md (script-args, MCP allowlist, maintainer checklist).
+  GitHub Actions workflow .github/workflows/nmap-ppro-checks.yml runs MCP pytest,
+  maint scripts, and an Ubuntu SIEM NDJSON smoke build. README-nmap-ppro.md and
+  mcp-nmap-server/README.md link the security overview.
+
+o [nmap-ppro] Added README-nmap-ppro.md and a short pointer section in README.md
+  describing fork additions vs upstream Nmap, build/install, MCP setup, and
+  where to read security documentation (MCP policy, docs/security/, offsec NSE).
+
 o [nmap-ppro][SIEM] NDJSON events now include schema_version (1) and ts (UTC
   ISO-8601) on every line; siem_log.cc uses a shared envelope builder. Opening
   --siem-log file failure is a warning only (scan continues; syslog-only still

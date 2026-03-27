@@ -52,10 +52,14 @@ def _nmap_help_mentions_siem() -> bool:
         ["--proxy", "http://127.0.0.1:9"],
         ["--sI", "zombie:port"],
         ["--datadir=/tmp"],
+        ["--datadir", "/tmp"],
         ["--servicedb=/x"],
         ["--versiondb=/x"],
         ["--stylesheet=/x"],
         ["--excludefile=/x"],
+        ["--append-output"],
+        ["--siem-log", "/var/tmp/should-not-be-used.ndjson"],
+        ["--siem-log=/etc/passwd"],
     ],
 )
 def test_safe_mode_blocks_tabled_long_flags(scan_options: list[str]) -> None:

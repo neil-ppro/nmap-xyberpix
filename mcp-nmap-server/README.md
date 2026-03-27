@@ -2,13 +2,28 @@
 
 A [Model Context Protocol](https://modelcontextprotocol.io/) (stdio) server that lets AI agents run **Nmap** safely: version/help introspection, command validation (`nmap_dry_run`), execution (`nmap_run_scan`), a small XML summarizer (`nmap_parse_xml_summary`), and **curated nmap-ppro offsec presets** (`nmap_offsec_*`) that run a fixed allowlisted `--script` set without enabling the full unsafe CLI.
 
+**Fork security overview** (threat model, env vars, SIEM/NSE pointers): [`docs/security/SECURITY-OVERVIEW.md`](../docs/security/SECURITY-OVERVIEW.md).
+
 This package lives in the **nmap-ppro** tree and is **not** part of the core Nmap install; install it when you want MCP integration.
 
 ## Requirements
 
 - Python 3.10+
 - `nmap` on `PATH` (or set `NMAP_MCP_BINARY` to the executable path)
-- `pip install -e .` or `pip install .` from this directory (pulls in the `mcp` PyPI package)
+- `pip install -e .` or `pip install .` from this directory (pulls in the `mcp` and `defusedxml` packages)
+
+## Output limits (robustness)
+
+`nmap_run_scan`, `nmap_version`, `nmap_help`, etc. return **stdout** / **stderr** from the subprocess. Very large output is **UTF-8–truncated** before returning to the client:
+
+| Environment variable | Default | Purpose |
+|----------------------|---------|---------|
+| `NMAP_MCP_MAX_STDOUT_BYTES` | 2097152 (2 MiB) | Cap captured stdout |
+| `NMAP_MCP_MAX_STDERR_BYTES` | 524288 (512 KiB) | Cap captured stderr |
+
+If truncated, the response includes **`stdout_truncated`** / **`stderr_truncated`**: true.
+
+`nmap_parse_xml_summary` uses **defusedxml** (not regex) to parse untrusted XML, rejects entity expansion, and caps the returned host list at **10,000** entries (`hosts_truncated` when hit).
 
 ## Run (stdio)
 

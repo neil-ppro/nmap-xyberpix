@@ -94,6 +94,7 @@ from zenmapCore.NmapParser import NmapParser
 from zenmapCore.Paths import Path, get_extra_executable_search_paths
 from zenmapCore.UmitLogging import log
 from zenmapCore.NmapOptions import NmapOptions, split_quoted, join_quoted
+from zenmapCore.scan_command_warnings import intrusive_scan_warnings
 import zenmapCore.I18N  # lgtm[py/unused-import]
 
 # How often the live output view refreshes, in milliseconds.
@@ -385,6 +386,20 @@ class ScanInterface(HIGVBox):
             warn_dialog.run()
             warn_dialog.destroy()
             return
+
+        warn_lines = intrusive_scan_warnings(command)
+        if warn_lines:
+            lines = "\n".join(warn_lines)
+            confirm = HIGAlertDialog(
+                    message_format=_("Potentially intrusive or file-reading options"),
+                    secondary_text=lines + "\n\n" + _(
+                        "Run this scan anyway?"),
+                    type=Gtk.MessageType.WARNING,
+                    buttons=Gtk.ButtonsType.OK_CANCEL)
+            response = confirm.run()
+            confirm.destroy()
+            if response != Gtk.ResponseType.OK:
+                return
 
         self.execute_command(command, target, profile)
 

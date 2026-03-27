@@ -16,6 +16,8 @@ import shutil
 import subprocess
 from typing import Any
 
+import defusedxml.ElementTree as ET
+from defusedxml.common import EntitiesForbidden
 from mcp.server.fastmcp import FastMCP
 
 # Characters that must not appear in any argv fragment (shell-injection hygiene
@@ -61,6 +63,161 @@ _SAFE_MODE_LONG_BASE_BLOCKLIST: frozenset[str] = frozenset(
 _DEFAULT_TIMEOUT = 120
 _MAX_TIMEOUT = 3600
 _MAX_ARG_LEN = 8192
+
+# Cap captured nmap stdout/stderr returned to MCP clients (bytes, UTF-8).
+_ENV_MAX_STDOUT = "NMAP_MCP_MAX_STDOUT_BYTES"
+_ENV_MAX_STDERR = "NMAP_MCP_MAX_STDERR_BYTES"
+_DEFAULT_MAX_STDOUT_CAPTURE = 2 * 1024 * 1024
+_DEFAULT_MAX_STDERR_CAPTURE = 512 * 1024
+
+# nmap_parse_xml_summary limits
+_MAX_XML_TEXT_BYTES = 50_000_000
+_MAX_XML_HOSTS_RETURNED = 10_000
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        v = int(raw, 10)
+        return v if v > 0 else default
+    except ValueError:
+        return default
+
+
+def _truncate_utf8_text(s: str, max_bytes: int) -> tuple[str, bool]:
+    """Return (text, truncated) with UTF-8-safe truncation."""
+    if max_bytes <= 0:
+        return "", True
+    raw = s.encode("utf-8")
+    if len(raw) <= max_bytes:
+        return s, False
+    cut = raw[:max_bytes]
+    while cut and (cut[-1] & 0x80) and not (cut[-1] & 0x40):
+        cut = cut[:-1]
+    out = cut.decode("utf-8", errors="replace")
+    out += "\n[... output truncated by nmap-mcp-server; raise NMAP_MCP_MAX_*_BYTES ...]"
+    return out, True
+
+
+def _xml_local_tag(tag: str) -> str:
+    if tag.startswith("{"):
+        return tag.partition("}")[2] or tag
+    return tag
+
+
+def _parse_nmap_xml_summary(xml_text: str) -> dict[str, Any]:
+    """
+    Parse Nmap -oX XML using defusedxml (no regex on untrusted XML).
+    Returns {"ok": True, ...} or {"ok": False, "error": ...}.
+    """
+    if len(xml_text) > _MAX_XML_TEXT_BYTES:
+        return {"ok": False, "error": f"xml_text too large (max {_MAX_XML_TEXT_BYTES} bytes)."}
+
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as e:
+        return {"ok": False, "error": f"invalid XML: {e}"}
+    except EntitiesForbidden as e:
+        return {"ok": False, "error": f"XML entity expansion not allowed: {e}"}
+
+    hosts_out: list[dict[str, Any]] = []
+    truncated = False
+
+    for host in root.findall(".//host"):
+        if len(hosts_out) >= _MAX_XML_HOSTS_RETURNED:
+            truncated = True
+            break
+
+        st_el = None
+        for child in host:
+            if _xml_local_tag(child.tag) == "status":
+                st_el = child
+                break
+        up = st_el is not None and (st_el.get("state") or "").lower() == "up"
+
+        addrs: list[dict[str, str]] = []
+        hostnames: list[str] = []
+        ports: list[dict[str, str]] = []
+
+        for child in host:
+            lt = _xml_local_tag(child.tag)
+            if lt == "address":
+                addr = child.get("addr") or ""
+                atype = child.get("addrtype") or ""
+                if addr:
+                    addrs.append({"addr": addr, "type": atype})
+            elif lt == "hostnames":
+                for hn in child:
+                    if _xml_local_tag(hn.tag) == "hostname":
+                        name = hn.get("name")
+                        if name:
+                            hostnames.append(name)
+            elif lt == "ports":
+                for p in child:
+                    if _xml_local_tag(p.tag) != "port":
+                        continue
+                    proto = p.get("protocol") or ""
+                    portid = p.get("portid") or ""
+                    state = "unknown"
+                    svc = ""
+                    for sub in p:
+                        sl = _xml_local_tag(sub.tag)
+                        if sl == "state":
+                            state = (sub.get("state") or "unknown").lower()
+                        elif sl == "service":
+                            svc = sub.get("name") or ""
+                    ports.append(
+                        {
+                            "port": portid,
+                            "protocol": proto,
+                            "state": state,
+                            "service": svc,
+                        }
+                    )
+
+        hosts_out.append(
+            {
+                "up": up,
+                "addresses": addrs,
+                "hostnames": hostnames,
+                "ports": ports,
+            }
+        )
+
+    stats: dict[str, Any] = {}
+    runstats_el = None
+    for el in root.iter():
+        if _xml_local_tag(el.tag) == "runstats":
+            runstats_el = el
+            break
+    if runstats_el is not None:
+        for ch in runstats_el:
+            cl = _xml_local_tag(ch.tag)
+            if cl == "finished" and ch.get("timestr"):
+                stats["finished_timestr"] = ch.get("timestr")
+            elif cl == "hosts":
+                try:
+                    if ch.get("up") is not None:
+                        stats["hosts_up"] = int(ch.get("up", "0"))
+                    if ch.get("down") is not None:
+                        stats["hosts_down"] = int(ch.get("down", "0"))
+                except ValueError:
+                    pass
+
+    out: dict[str, Any] = {
+        "ok": True,
+        "hosts": hosts_out,
+        "runstats": stats,
+    }
+    if truncated:
+        out["hosts_truncated"] = True
+        out["hosts_total_parsed"] = len(hosts_out)
+        out["note"] = (
+            f"Host list capped at {_MAX_XML_HOSTS_RETURNED}; increase not supported via tool."
+        )
+    return out
 _MAX_ARGS = 64
 _MAX_PRESET_ID_LEN = 128
 
@@ -626,6 +783,8 @@ def _targets_allowed_for_scope(
 
 
 def _run_nmap(argv: list[str], timeout: int) -> dict[str, Any]:
+    max_out = _env_int(_ENV_MAX_STDOUT, _DEFAULT_MAX_STDOUT_CAPTURE)
+    max_err = _env_int(_ENV_MAX_STDERR, _DEFAULT_MAX_STDERR_CAPTURE)
     try:
         proc = subprocess.run(
             argv,
@@ -650,12 +809,19 @@ def _run_nmap(argv: list[str], timeout: int) -> dict[str, Any]:
             "stdout": "",
             "stderr": "",
         }
-    return {
+    out, tout = _truncate_utf8_text(proc.stdout or "", max_out)
+    err, terr = _truncate_utf8_text(proc.stderr or "", max_err)
+    result: dict[str, Any] = {
         "ok": proc.returncode == 0,
         "returncode": proc.returncode,
-        "stdout": proc.stdout,
-        "stderr": proc.stderr,
+        "stdout": out,
+        "stderr": err,
     }
+    if tout:
+        result["stdout_truncated"] = True
+    if terr:
+        result["stderr_truncated"] = True
+    return result
 
 
 mcp = FastMCP(
@@ -914,67 +1080,12 @@ def nmap_parse_xml_summary(xml_text: str) -> dict[str, Any]:
     """
     Parse Nmap XML from -oX - and return a compact JSON-friendly summary
     (hosts, addresses, ports with state/service, run stats if present).
+
+    Uses defusedxml (no regex) for safer parsing of untrusted XML. Very large
+    scans may set ``hosts_truncated`` when more than 10,000 ``<host>`` elements
+    are present.
     """
-    # Avoid heavy deps: regex-based extraction is enough for agent summaries.
-    if len(xml_text) > 50_000_000:
-        return {"ok": False, "error": "xml_text too large (max 50MB)."}
-
-    hosts: list[dict[str, Any]] = []
-    for hm in re.finditer(
-        r"<host\b[^>]*>(.*?)</host>",
-        xml_text,
-        flags=re.DOTALL | re.IGNORECASE,
-    ):
-        block = hm.group(1)
-        up = bool(re.search(r'<status[^>]+state="up"', block, re.I))
-        addrs = re.findall(
-            r'<address\b[^>]*addr="([^"]+)"[^>]*addrtype="([^"]+)"', block, re.I
-        )
-        hostnames = re.findall(r"<hostname\b[^>]*name=\"([^\"]+)\"", block, re.I)
-        ports: list[dict[str, str]] = []
-        for pm in re.finditer(
-            r'<port\b[^>]*protocol="(\w+)"[^>]*portid="(\d+)"[^>]*>(.*?)</port>',
-            block,
-            flags=re.DOTALL | re.I,
-        ):
-            proto, portid, pblock = pm.group(1), pm.group(2), pm.group(3)
-            sm = re.search(r'<state\b[^>]*state="(\w+)"', pblock, re.I)
-            state = sm.group(1) if sm else "unknown"
-            sv = re.search(
-                r'<service\b[^>]*name="([^"]*)"', pblock, re.I
-            )
-            svc = sv.group(1) if sv else ""
-            ports.append(
-                {
-                    "port": portid,
-                    "protocol": proto,
-                    "state": state,
-                    "service": svc,
-                }
-            )
-        hosts.append(
-            {
-                "up": up,
-                "addresses": [{"addr": a, "type": t} for a, t in addrs],
-                "hostnames": hostnames,
-                "ports": ports,
-            }
-        )
-
-    stats = {}
-    sm = re.search(
-        r'<runstats>.*?<finished\b[^>]*timestr="([^"]*)"[^>]*/>',
-        xml_text,
-        flags=re.DOTALL | re.I,
-    )
-    if sm:
-        stats["finished_timestr"] = sm.group(1)
-    sm = re.search(r'<hosts\b[^>]*up="(\d+)"[^>]*down="(\d+)"', xml_text, re.I)
-    if sm:
-        stats["hosts_up"] = int(sm.group(1))
-        stats["hosts_down"] = int(sm.group(2))
-
-    return {"ok": True, "hosts": hosts, "runstats": stats}
+    return _parse_nmap_xml_summary(xml_text)
 
 
 def main() -> None:

@@ -111,8 +111,8 @@ short_desc="SCTP is a layer 4 protocol used mostly for telephony related applica
 	<SIEM label="SIEM &amp; scan policy (nmap-ppro)">
 		<option_check option="--safe-profile" label="Safe profile" short_desc="Use conservative timing and rate limits suitable for sensitive networks (nmap-ppro)." example=""/>
 		<option_check option="--ipv6-robust" label="IPv6-robust discovery" short_desc="Prefer discovery and timing behavior that works more reliably on IPv6 paths (nmap-ppro)." example=""/>
-		<option_check option="--adaptive-rate" label="Adaptive rate" short_desc="Adjust scan rate based on network conditions (nmap-ppro)." example=""/>
-		<option_check option="--auto-hostgroup" label="Auto host group" short_desc="Automatically tune parallel host batch size (nmap-ppro)." example=""/>
+		<option_check option="--adaptive-rate" label="Adaptive rate" short_desc="Adjust scan rate when the stack reports admin-prohibited ICMP conditions (nmap-ppro)." example=""/>
+		<option_check option="--auto-hostgroup" label="Auto host group" short_desc="Automatically tune parallel host batch size from timing template and TCP port count (nmap-ppro)." example=""/>
 		<option_check option="--decoy-stagger" label="Decoy stagger (µs)" short_desc="Microseconds between -D decoy packets to spread bursts vs rate-based IDS (nmap-ppro). Use with -D; 0 disables." example="3000"/>
 		<option_check option="--decoy-stagger-random" label="Random decoy stagger" short_desc="Each decoy gap uniform random in [1, --decoy-stagger] µs (nmap-ppro)." example=""/>
 		<option_check option="--siem-syslog" label="SIEM: syslog" short_desc="Also emit SIEM-oriented events to syslog (nmap-ppro)." example=""/>

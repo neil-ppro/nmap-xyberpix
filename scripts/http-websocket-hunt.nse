@@ -1,4 +1,5 @@
 local http = require "http"
+local http_offsec = require "http_offsec"
 local rand = require "rand"
 local shortport = require "shortport"
 local stdnse = require "stdnse"
@@ -23,11 +24,19 @@ local PATHS = {"/", "/ws", "/websocket", "/socket", "/realtime", "/live", "/grap
 
 action = function(host, port)
   local base = stdnse.get_script_args(SCRIPT_NAME .. ".basepath") or ""
+  local err = http_offsec.assert_safe_basepath(base)
+  if err then
+    return stdnse.format_output(false, err)
+  end
   local key = rand.random_string(16, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
   local lines = {}
 
   for _, p in ipairs(PATHS) do
     local path = base .. p
+    err = http_offsec.assert_safe_http_request_path(path)
+    if err then
+      return stdnse.format_output(false, err)
+    end
     local opts = {
       header = {
         ["Upgrade"] = "websocket",

@@ -17,6 +17,15 @@ Full documentation is also available
 Questions and suggestions may be sent to
 [the Nmap-dev mailing list](https://nmap.org/mailman/listinfo/dev).
 
+nmap-ppro (this repository)
+---------------------------
+This tree is **nmap-ppro**: Nmap plus SIEM-oriented logging, scan-policy and
+decoy-hardening options, optional **MCP** integration ([mcp-nmap-server/](mcp-nmap-server/)),
+and additional offensive-research **NSE** scripts. For a concise diff vs upstream,
+build steps, and **security documentation** (MCP policy, offsec scripts, PoC
+notes), see [README-nmap-ppro.md](README-nmap-ppro.md). Fork-specific release
+notes appear in [CHANGELOG](CHANGELOG) under `[nmap-ppro]` / `[SIEM]`.
+
 Installing
 ----------
 Ideally, you should be able to just type:

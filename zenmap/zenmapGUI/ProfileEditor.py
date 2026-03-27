@@ -56,6 +56,8 @@
 # *
 # ***************************************************************************/
 
+import difflib
+
 import gi
 
 gi.require_version("Gtk", "3.0")
@@ -204,6 +206,9 @@ class ProfileEditor(HIGWindow):
         self.save_button = HIGButton(_("Save Changes"), stock=Gtk.STOCK_SAVE)
         self.save_button.connect('clicked', self.save_profile)
 
+        self.compare_button = HIGButton(_("Compare to profile…"))
+        self.compare_button.connect('clicked', self.compare_profile_cb)
+
         ###
         self.help_vbox = HIGVBox()
         self.help_label = HIGSectionLabel(_('Help'))
@@ -263,6 +268,7 @@ class ProfileEditor(HIGWindow):
 
         # Packing buttons on button_hbox
         self.buttons_hbox._pack_expand_fill(hig_box_space_holder())
+        self.buttons_hbox._pack_noexpand_nofill(self.compare_button)
         if self.deletable:
             self.buttons_hbox._pack_noexpand_nofill(self.delete_button)
         self.buttons_hbox._pack_noexpand_nofill(self.cancel_button)
@@ -295,6 +301,85 @@ class ProfileEditor(HIGWindow):
             hbox = tab.get_hmain_box()
             vbox.pack_start(hbox, True, True, 0)
         self.notebook.append_page(vbox, Gtk.Label.new(tab_name))
+
+    def compare_profile_cb(self, widget=None):
+        current_name = self.profile_name_entry.get_text().strip()
+        names = sorted(
+                n for n in self.profile.sections() if n != current_name)
+        if not names:
+            alert = HIGAlertDialog(
+                    message_format=_("No profile to compare"),
+                    secondary_text=_(
+                        "There is no other saved profile to diff against, or "
+                        "only the current name exists. Create or select "
+                        "another profile first."),
+                    type=Gtk.MessageType.INFO)
+            alert.run()
+            alert.destroy()
+            return
+
+        dlg = Gtk.Dialog(
+                title=_("Compare command to profile"),
+                transient_for=self,
+                modal=True,
+                destroy_with_parent=True)
+        dlg.add_buttons(Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE)
+        dlg.set_default_size(640, 420)
+
+        vbox = Gtk.Box.new(Gtk.Orientation.VERTICAL, 6)
+        vbox.set_border_width(6)
+
+        row = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 6)
+        row.pack_start(Gtk.Label.new(_("Other profile:")), False, True, 0)
+        combo = Gtk.ComboBoxText()
+        for n in names:
+            combo.append_text(n)
+        combo.set_active(0)
+        row.pack_start(combo, True, True, 0)
+        vbox.pack_start(row, False, True, 0)
+
+        scroll = HIGScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        view = HIGTextView()
+        view.set_editable(False)
+        view.set_monospace(True)
+        buf = view.get_buffer()
+        scroll.add(view)
+        vbox.pack_start(scroll, True, True, 0)
+
+        dlg.get_content_area().pack_start(vbox, True, True, 0)
+
+        def normalized(cmd):
+            o = NmapOptions()
+            o.parse_string(cmd)
+            return o.render_string()
+
+        def refresh_diff(*_args):
+            other = combo.get_active_text()
+            if not other:
+                return
+            try:
+                other_cmd = self.profile.get_profile(other)["command"]
+            except Exception:
+                other_cmd = ""
+            a = normalized(self.command_entry.get_text())
+            b = normalized(other_cmd)
+            diff = difflib.unified_diff(
+                    a.splitlines(),
+                    b.splitlines(),
+                    fromfile=_("Current editor"),
+                    tofile=other,
+                    lineterm="")
+            text = "\n".join(diff)
+            if not text:
+                text = _("(No differences after normalizing options.)")
+            buf.set_text(text)
+
+        combo.connect("changed", refresh_diff)
+        refresh_diff()
+        dlg.show_all()
+        dlg.run()
+        dlg.destroy()
 
     def save_profile(self, widget):
         if self.overwrite:

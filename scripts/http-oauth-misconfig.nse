@@ -1,4 +1,5 @@
 local http = require "http"
+local http_offsec = require "http_offsec"
 local json = require "json"
 local shortport = require "shortport"
 local stdnse = require "stdnse"
@@ -70,8 +71,16 @@ end
 
 action = function(host, port)
   local base = stdnse.get_script_args(SCRIPT_NAME .. ".basepath") or ""
+  local err = http_offsec.assert_safe_basepath(base)
+  if err then
+    return stdnse.format_output(false, err)
+  end
   for _, wk in ipairs(WELL_KNOWN) do
     local path = base .. wk
+    err = http_offsec.assert_safe_http_request_path(path)
+    if err then
+      return stdnse.format_output(false, err)
+    end
     local resp = http.get(host, port, path)
     if resp and resp.status == 200 and resp.body then
       local ok, doc = pcall(json.parse, resp.body)

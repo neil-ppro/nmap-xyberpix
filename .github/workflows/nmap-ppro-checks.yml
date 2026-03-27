@@ -1,0 +1,108 @@
+name: nmap-ppro checks
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: nmap-ppro-checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-mcp-and-maint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: MCP server tests
+        run: |
+          cd mcp-nmap-server
+          python -m venv .venv
+          .venv/bin/pip install -U pip
+          .venv/bin/pip install -e ".[dev]"
+          .venv/bin/python -m pytest tests/ -q --tb=short
+
+      - name: Zenmap / MCP / docs sync
+        run: |
+          python3 maint/check_zenmap_siem_flags.py
+          python3 maint/check_offsec_mcp_sync.py
+
+      - name: Zenmap intrusive-option heuristics (no GUI)
+        run: |
+          cd zenmap
+          python3 -c "
+          from zenmapCore.scan_command_warnings import intrusive_scan_warnings
+          assert intrusive_scan_warnings('nmap -A -p 22'), 'expected -A warning'
+          assert intrusive_scan_warnings('nmap --script=default 127.0.0.1')
+          assert intrusive_scan_warnings('nmap -iL /tmp/t.txt')
+          assert not intrusive_scan_warnings('nmap -sn 192.0.2.1')
+          print('scan_command_warnings ok')
+          "
+
+      - name: Nmap long-options baseline (MCP policy drift guard)
+        run: python3 maint/check_mcp_longopt_baseline.py
+
+  mcp-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: MCP server tests (Windows)
+        shell: bash
+        run: |
+          cd mcp-nmap-server
+          python -m venv .venv
+          .venv/Scripts/pip install -U pip
+          .venv/Scripts/pip install -e ".[dev]"
+          .venv/Scripts/python -m pytest tests/ -q --tb=short
+
+  build-nmap-ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build nmap (Ubuntu)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libpcap-dev libnet-dev libpcre2-dev
+          ./configure
+          make -j3
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nmap-ubuntu-binary
+          path: nmap
+          retention-days: 3
+
+  siem-smoke:
+    needs: build-nmap-ubuntu
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Runtime libraries for built nmap
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libnet1 libpcre2-8-0
+          sudo apt-get install -y libpcap0.8t64 || sudo apt-get install -y libpcap0.8
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: nmap-ubuntu-binary
+          path: _nmap_art
+
+      - name: SIEM NDJSON smoke
+        run: |
+          chmod +x _nmap_art/nmap
+          maint/siem_ndjson_smoketest.sh "$PWD/_nmap_art/nmap"

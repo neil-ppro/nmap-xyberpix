@@ -56,12 +56,15 @@
 # *
 # ***************************************************************************/
 
+import json
+
 import gi
 
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk
 
 from zenmapGUI.SearchGUI import SearchGUI
+from zenmapGUI.higwidgets.higdialogs import HIGAlertDialog
 
 import zenmapCore.I18N  # lgtm[py/unused-import]
 from zenmapCore.UmitConf import is_maemo
@@ -113,6 +116,7 @@ class SearchWindow(BaseSearchWindow):
         self.btn_box = Gtk.ButtonBox.new(Gtk.Orientation.HORIZONTAL)
         self.btn_open = HIGButton(stock=Gtk.STOCK_OPEN)
         self.btn_append = HIGButton(_("Append"), Gtk.STOCK_ADD)
+        self.btn_export = HIGButton(_("Export JSON…"))
         self.btn_close = HIGButton(stock=Gtk.STOCK_CLOSE)
 
         self.search_gui = SearchGUI(self)
@@ -123,6 +127,7 @@ class SearchWindow(BaseSearchWindow):
         self.btn_box.set_layout(Gtk.ButtonBoxStyle.END)
         self.btn_box.set_spacing(4)
         self.btn_box.pack_start(self.btn_close, True, True, 0)
+        self.btn_box.pack_start(self.btn_export, True, True, 0)
         self.btn_box.pack_start(self.btn_append, True, True, 0)
         self.btn_box.pack_start(self.btn_open, True, True, 0)
 
@@ -145,6 +150,7 @@ class SearchWindow(BaseSearchWindow):
 
         self.btn_open.connect("clicked", self.open_selected)
         self.btn_append.connect("clicked", self.append_selected)
+        self.btn_export.connect("clicked", self.export_selected_json)
         self.btn_close.connect("clicked", self.close)
         self.connect("delete-event", self.close)
 
@@ -170,6 +176,59 @@ class SearchWindow(BaseSearchWindow):
 
         # Close Search Window
         self.close()
+
+    def export_selected_json(self, widget=None):
+        results = self.search_gui.selected_results
+        if not results:
+            d = HIGAlertDialog(
+                    message_format=_("Nothing to export"),
+                    secondary_text=_(
+                        "Select one or more scans in the result list first."),
+                    type=Gtk.MessageType.INFO)
+            d.run()
+            d.destroy()
+            return
+
+        payload = []
+        for _scan_id in sorted(results.keys()):
+            _title, parsed = results[_scan_id]
+            payload.append({
+                "scan_name": parsed.scan_name,
+                "start": parsed.start,
+                "profile_name": parsed.profile_name,
+                "nmap_command": parsed.get_nmap_command(),
+                "targets": list(parsed.get_targets()),
+                "source_file": getattr(parsed, "filename", None),
+            })
+
+        chooser = Gtk.FileChooserDialog(
+                title=_("Export selected scans as JSON"),
+                parent=self,
+                action=Gtk.FileChooserAction.SAVE,
+                buttons=(
+                    Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+                    Gtk.STOCK_SAVE, Gtk.ResponseType.OK))
+        chooser.set_do_overwrite_confirmation(True)
+        chooser.set_current_name("zenmap-search-export.json")
+        filt = Gtk.FileFilter()
+        filt.set_name(_("JSON files"))
+        filt.add_pattern("*.json")
+        chooser.add_filter(filt)
+        response = chooser.run()
+        path = chooser.get_filename()
+        chooser.destroy()
+        if response != Gtk.ResponseType.OK or not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2, ensure_ascii=False)
+        except OSError as e:
+            d = HIGAlertDialog(
+                    message_format=_("Could not write file"),
+                    secondary_text=str(e),
+                    type=Gtk.MessageType.ERROR)
+            d.run()
+            d.destroy()
 
     def get_results(self):
         # Return list with parsed objects from result list store

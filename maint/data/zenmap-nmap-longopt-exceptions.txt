@@ -1,0 +1,32 @@
+# Long option names present in nmap.cc (see maint/data/nmap-long-options-baseline.txt)
+# but intentionally omitted from zenmap/zenmapCore/NmapOptions.py LONG_OPTIONS.
+# When Nmap adds a NEW long flag, CI fails until you either add it to LONG_OPTIONS
+# (and profile UI if appropriate) OR list it here with a short comment on the same line.
+#
+# Format: one name per line; optional " # reason" after the name.
+
+adler32                          # rare checksum option
+data                               # binary payload / advanced
+data-string                        # binary payload / advanced
+defeat-icmp-ratelimit              # timing; Zenmap has defeat-rst only in UI
+deprecated-xml-osclass             # deprecated output flag
+disable-arp-ping                   # discovery tweak; rarely set from GUI
+discovery-ignore-rst               # discovery tweak
+exclude-ports                      # use --exclude patterns in practice
+ff                                 # duplicate -f shortcut long form
+nogcc                              # internal / obscure
+noninteractive                     # batch/CI oriented
+nsock-engine                       # engine selection; advanced
+oH                                 # HTML output; rarely used from Zenmap
+proxies                            # proxy chain; advanced / MCP-sensitive
+proxy                              # alias of proxies
+rH                                 # alias; Zenmap exposes --randomize-hosts
+resolve-all                        # DNS advanced
+resume                             # resume scan; file-based workflow
+route-dst                          # advanced routing
+script-args-file                   # NSE file args; advanced
+script-timeout                     # NSE timing; advanced
+stats-every                        # progress stats interval
+thc                                # obscure compatibility flag
+unique                             # host dedup advanced
+vv                                 # duplicate -vv long form

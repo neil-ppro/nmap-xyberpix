@@ -25,21 +25,38 @@ Several scripts use `http_offsec` for:
 
 ## MCP server note
 
-If you use **`mcp-nmap-server`**, see
+If you use **`mcp-nmap-server`**, start with
+[`docs/security/SECURITY-OVERVIEW.md`](security/SECURITY-OVERVIEW.md), then
 [`docs/security/MCP-TARGET-ARGV-INJECTION.md`](security/MCP-TARGET-ARGV-INJECTION.md)
 for how target parameters are validated (Nmap option injection).
 
-## Script reference
+## Script index (authorized use only)
 
-| Script | Category | Notes |
-|--------|----------|--------|
-| `http-openapi-map` | discovery | GETs common OpenAPI/Swagger paths; parses JSON when possible; flags path names matching sensitive keywords. |
-| `http-graphql-introspect` | discovery | POSTs an introspection query to common GraphQL paths. |
-| `http-jwt-probe` | discovery | **Prerule:** decodes a JWT header from `http-jwt-probe.jwt`; flags `alg=none`, `jku`/`x5u`, odd `kid`. Does not fetch JWKS. |
-| `k8s-api-anon-audit` | discovery | GETs `/version`, `/api`, `/api/v1/namespaces`; classifies anonymous JSON vs 401/403 vs failures. |
-| `http-ssrf-canary` | intrusive | Requires **`http-ssrf-canary.unsafe=1`** and `http-ssrf-canary.template` containing literal `CANARY`. |
-| `http-cloud-metadata-reach` | intrusive | Requires **`http-cloud-metadata-reach.unsafe=1`**; probes metadata-style URLs from the scanner (not SSRF through an app). |
-| `http-llm-proxy-leak` | intrusive | Requires **`http-llm-proxy-leak.unsafe=1`**; probes LLM-style paths with a dummy `Authorization` header. |
+Every script below is **optional** and must be run only with **written authorization** for the target. **Intrusive** rows perform outbound requests that may be noisy or sensitive; they are gated by **`SCRIPT_NAME.unsafe=1`** (and MCP uses additional env/tool flags for presets).
+
+### Reference table
+
+| Script | Intrusive | Required / notable `--script-args` | `http_offsec` helpers | In MCP allowlist |
+|--------|-----------|------------------------------------|-----------------------|------------------|
+| `http-openapi-map` | no | none | path safety for probe URLs | yes (`http_discovery` preset) |
+| `http-graphql-introspect` | no | none | path safety | yes (`http_discovery`) |
+| `http-jwt-probe` | no | **`http-jwt-probe.jwt=`** JWT for prerule decode | path safety | yes (`http_discovery`; dummy JWT in preset) |
+| `k8s-api-anon-audit` | no | none | path safety | yes (`k8s_api_audit`) |
+| `http-ssrf-canary` | yes | **`http-ssrf-canary.unsafe=1`**, **`http-ssrf-canary.template=`** (must contain `CANARY`) | `intrusive_gate`, path safety | yes (`intrusive_canaries`) |
+| `http-cloud-metadata-reach` | yes | **`http-cloud-metadata-reach.unsafe=1`** | `intrusive_gate`, path safety | yes (`intrusive_canaries`) |
+| `http-llm-proxy-leak` | yes | **`http-llm-proxy-leak.unsafe=1`** | `intrusive_gate`, path safety | yes (`intrusive_canaries`) |
+| `http-oauth-misconfig` | no | optional **`http-oauth-misconfig.basepath=`** (must pass `http_offsec` checks) | `assert_safe_basepath`, `assert_safe_http_request_path` on full path | **no** — use full Nmap CLI or `NMAP_MCP_ALLOW_UNSAFE_CLI` |
+| `http-websocket-hunt` | no | optional **`http-websocket-hunt.basepath=`** (same checks) | `assert_safe_basepath`, `assert_safe_http_request_path` | **no** |
+| `tls-clientcert-optional-downgrade` | no | optional **`tls-clientcert-optional-downgrade.basepath=`** (prefix for probe paths) | `assert_safe_basepath`, `assert_safe_http_request_path` | **no** |
+
+**MCP allowlist** scripts are enforced in `mcp_nmap/server.py` (`_OFFSEC_ALLOWED_SCRIPTS` and preset `options`). Other scripts in this table ship with the fork but are **not** exposed through `nmap_offsec_*` tools unless you extend the allowlist and run **`python3 maint/check_offsec_mcp_sync.py`** (and CI).
+
+### Maintainer checklist (new or changed scripts)
+
+1. If the script uses HTTP with user-influenced paths, prefer **`http_offsec.assert_safe_http_request_path`** / **`assert_safe_basepath`** (see `nselib/http_offsec.lua`).
+2. If the script is intrusive, use **`http_offsec.intrusive_gate`** and document **`SCRIPT_NAME.unsafe=1`** in this file.
+3. If the script should appear in **MCP offsec presets**, add the basename to **`_OFFSEC_ALLOWED_SCRIPTS`**, extend **`_OFFSEC_PRESETS`**, and run **`maint/check_offsec_mcp_sync.py`** so `scripts/*.nse` and this doc stay aligned.
+4. Add a row to the table above with **Intrusive**, **script-args**, and **MCP allowlist** columns.
 
 ### Example: safe HTTP discovery (localhost)
 
@@ -80,14 +97,9 @@ and **`nmap_offsec_run_scan`** so agents can run a **fixed, allowlisted**
 
 See `mcp-nmap-server/README.md` for general MCP security policy.
 
-## Automated check
+## Automated checks
 
-`maint/nse_offsec_selftest.py` starts a tiny local HTTP server on a **likely
-HTTP port** (see `shortport.http` / `LIKELY_HTTP_PORTS` so `portrule` matches)
-and runs a few Nmap invocations against `127.0.0.1`. Set
-**`NMAP_SELFTEST_BINARY`** if `nmap` is not on `PATH`. The script passes
-`--datadir` to the repository root so fork `scripts/` and `nselib/` load.
+- **`maint/check_offsec_mcp_sync.py`** — MCP allowlist ↔ `scripts/*.nse` ↔ this document (run after editing presets or the table).
+- **`maint/nse_offsec_selftest.py`** — starts a tiny local HTTP server on a **likely HTTP port** (see `shortport.http` / `LIKELY_HTTP_PORTS` so `portrule` matches) and runs a few Nmap invocations against `127.0.0.1`. Set **`NMAP_SELFTEST_BINARY`** if `nmap` is not on `PATH`. The script passes `--datadir` to the repository root so fork `scripts/` and `nselib/` load. The intrusive-gate check runs Nmap with **`-d`**: `stdnse.format_output(false, ...)` normally omits failure text from script output unless debugging is enabled.
 
-The intrusive-gate check runs Nmap with **`-d`**: `stdnse.format_output(false,
-...)` normally omits failure text from script output unless debugging is
-enabled.
+CI runs the sync script and MCP tests under **nmap-ppro checks** (see `.github/workflows/nmap-ppro-checks.yml`).
