@@ -303,6 +303,9 @@ void NmapOps::Initialize() {
   always_resolve = false;
   resolve_all = false;
   unique = false;
+  adaptive_rate = false;
+  auto_hostgroup = false;
+  ipv6_robust = false;
   dns_servers = NULL;
   implicitARPPing = true;
   numhosts_scanned = 0;

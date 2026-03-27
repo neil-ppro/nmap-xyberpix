@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -223,9 +223,11 @@
     <ClCompile Include="..\scan_engine.cc" />
     <ClCompile Include="..\scan_engine_connect.cc" />
     <ClCompile Include="..\scan_engine_raw.cc" />
+    <ClCompile Include="..\scan_adaptive.cc" />
     <ClCompile Include="..\scan_lists.cc" />
     <ClCompile Include="..\service_scan.cc" />
     <ClCompile Include="..\services.cc" />
+    <ClCompile Include="..\siem_log.cc" />
     <ClCompile Include="..\Target.cc" />
     <ClCompile Include="..\TargetGroup.cc" />
     <ClCompile Include="..\targets.cc" />
@@ -283,9 +285,11 @@
     <ClInclude Include="..\scan_engine.h" />
     <ClInclude Include="..\scan_engine_connect.h" />
     <ClInclude Include="..\scan_engine_raw.h" />
+    <ClInclude Include="..\scan_adaptive.h" />
     <ClInclude Include="..\scan_lists.h" />
     <ClInclude Include="..\service_scan.h" />
     <ClInclude Include="..\services.h" />
+    <ClInclude Include="..\siem_log.h" />
     <ClInclude Include="..\targets.h" />
     <ClInclude Include="..\tcpip.h" />
     <ClInclude Include="..\timing.h" />

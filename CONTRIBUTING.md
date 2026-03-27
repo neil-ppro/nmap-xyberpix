@@ -12,6 +12,8 @@
 
 This file serves as a supplement to the [HACKING file](HACKING). It contains information specifically about Nmap's use of Github and how contributors can use Github services to participate in Nmap development.
 
+**This repository (nmap-ppro):** Any change that would belong in release notes (features, bug fixes, security, behavior, user-facing docs, build, or CI) must include an entry in the root **`CHANGELOG`** in the same contribution, newest entries first. Conventions are summarized in [`.cursor/rules/changelog.mdc`](.cursor/rules/changelog.mdc).
+
 ## <a name="repo"></a>Code Repository
 
 The authoritative code repository is still the Subversion repository at [https://svn.nmap.org/nmap](https://svn.nmap.org/nmap). The Github repository is synchronized once per hour. All commits are made directly to Subversion, so Github is a read-only mirror.

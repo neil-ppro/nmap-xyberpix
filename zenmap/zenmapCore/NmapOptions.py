@@ -385,8 +385,10 @@ def getopt_long_only_extras(cmd_args, short_opts, long_opts):
 class NmapOptions(object):
     SHORT_OPTIONS = "6Ab:D:d::e:Ffg:hi:M:m:nO::o:P:p:RrS:s:T:v::V"
     LONG_OPTIONS = (
+        ("adaptive-rate", option.NO_ARGUMENT),
         ("allports", option.NO_ARGUMENT),
         ("append-output", option.NO_ARGUMENT),
+        ("auto-hostgroup", option.NO_ARGUMENT),
         ("badsum", option.NO_ARGUMENT),
         ("data-length", option.REQUIRED_ARGUMENT),
         ("datadir", option.REQUIRED_ARGUMENT),
@@ -403,6 +405,7 @@ class NmapOptions(object):
         ("iflist", option.NO_ARGUMENT),
         ("initial-rtt-timeout", option.REQUIRED_ARGUMENT),
         ("ip-options", option.REQUIRED_ARGUMENT),
+        ("ipv6-robust", option.NO_ARGUMENT),
         ("log-errors", option.NO_ARGUMENT),
         ("max-hostgroup", option.REQUIRED_ARGUMENT),
         ("max-os-tries", option.REQUIRED_ARGUMENT),
@@ -433,6 +436,7 @@ class NmapOptions(object):
         ("randomize-hosts", option.NO_ARGUMENT),
         ("reason", option.NO_ARGUMENT),
         ("release-memory", option.NO_ARGUMENT),
+        ("safe-profile", option.NO_ARGUMENT),
         ("scan-delay", option.REQUIRED_ARGUMENT),
         ("scanflags", option.REQUIRED_ARGUMENT),
         ("sI", option.REQUIRED_ARGUMENT),
@@ -444,6 +448,9 @@ class NmapOptions(object):
         ("send-eth", option.NO_ARGUMENT),
         ("send-ip", option.NO_ARGUMENT),
         ("servicedb", option.REQUIRED_ARGUMENT),
+        ("siem-log", option.REQUIRED_ARGUMENT),
+        ("siem-syslog", option.NO_ARGUMENT),
+        ("siem-tag", option.REQUIRED_ARGUMENT),
         ("source-port", option.REQUIRED_ARGUMENT),
         ("spoof-mac", option.REQUIRED_ARGUMENT),
         ("stylesheet", option.REQUIRED_ARGUMENT),
@@ -553,13 +560,16 @@ class NmapOptions(object):
         if opt in ("6", "A", "F", "h", "n", "R", "r", "V"):
             self["-" + opt] = True
         elif opt in (
+                "adaptive-rate",
                 "allports",
                 "append-output",
+                "auto-hostgroup",
                 "badsum",
                 "defeat-rst-ratelimit",
                 "fuzzy",
                 "help",
                 "iflist",
+                "ipv6-robust",
                 "log-errors",
                 "no-stylesheet",
                 "open",
@@ -570,10 +580,12 @@ class NmapOptions(object):
                 "randomize-hosts",
                 "reason",
                 "release-memory",
+                "safe-profile",
                 "script-trace",
                 "script-updatedb",
                 "send-eth",
                 "send-ip",
+                "siem-syslog",
                 "system-dns",
                 "traceroute",
                 "unprivileged",
@@ -620,6 +632,8 @@ class NmapOptions(object):
                 "script-args",
                 "script-help",
                 "servicedb",
+                "siem-log",
+                "siem-tag",
                 "source-port",
                 "spoof-mac",
                 "stylesheet",
@@ -821,13 +835,16 @@ class NmapOptions(object):
                 opt_list.append("-PB")
 
         for opt in (
+                "--adaptive-rate",
                 "--allports",
                 "--append-output",
+                "--auto-hostgroup",
                 "--badsum",
                 "--defeat-rst-ratelimit",
                 "--fuzzy",
                 "--help",
                 "--iflist",
+                "--ipv6-robust",
                 "--log-errors",
                 "--no-stylesheet",
                 "--open",
@@ -840,10 +857,12 @@ class NmapOptions(object):
                 "--randomize-hosts",
                 "--reason",
                 "--release-memory",
+                "--safe-profile",
                 "--script-trace",
                 "--script-updatedb",
                 "--send-eth",
                 "--send-ip",
+                "--siem-syslog",
                 "--system-dns",
                 "--traceroute",
                 "--unprivileged",
@@ -875,6 +894,8 @@ class NmapOptions(object):
                 "--script-args",
                 "--script-help",
                 "--servicedb",
+                "--siem-log",
+                "--siem-tag",
                 "--spoof-mac",
                 "--stylesheet",
                 "--top-ports",
@@ -1029,6 +1050,8 @@ class NmapOptionsTest(unittest.TestCase):
             "nmap -d -v -d",
             "nmap localhost",
             "nmap -oX - 192.168.0.1 -PS10",
+            "nmap --safe-profile --adaptive-rate --siem-log /tmp/siem.ndjson "
+            "--siem-tag prod localhost",
         )
         ops = NmapOptions()
         for test in TESTS:
@@ -1351,6 +1374,15 @@ class NmapOptionsTest(unittest.TestCase):
             "-oX out.xml",
             "-sI=zombie.example.com",
             "-sI zombie.example.com",
+            "--safe-profile",
+            "--ipv6-robust",
+            "--adaptive-rate",
+            "--auto-hostgroup",
+            "--siem-syslog",
+            "--siem-log=/tmp/siem.ndjson",
+            "--siem-log /tmp/siem.ndjson",
+            "--siem-tag=site1",
+            "--siem-tag site1",
             ]
 
         # The following options are present in the Nmap source but are not

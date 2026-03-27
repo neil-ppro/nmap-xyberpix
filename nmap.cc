@@ -71,6 +71,7 @@
 #include "nmap.h"
 #include "osscan.h"
 #include "scan_engine.h"
+#include "scan_adaptive.h"
 #include "FPEngine.h"
 #include "idle_scan.h"
 #include "NmapOps.h"
@@ -90,6 +91,7 @@
 #include "xml.h"
 #include "scan_lists.h"
 #include "payload.h"
+#include "siem_log.h"
 
 #ifndef NOLUA
 #include "nse_main.h"
@@ -291,6 +293,14 @@ static void printusage() {
          "  --packet-trace: Show all packets sent and received\n"
          "  --iflist: Print host interfaces and routes (for debugging)\n"
          "  --append-output: Append to rather than clobber specified output files\n"
+         "  --siem-log <file>: Write newline-delimited JSON scan events for SIEM/analytics\n"
+         "  --siem-syslog: Send same JSON as RFC 5424 to the system log (no SIEM file;\n"
+         "     Unix: logger(1) or syslog; Windows: Event Log)\n"
+         "  --siem-tag <string>: Optional label included on each SIEM event (site, env, etc.)\n"
+         "  --safe-profile: Polite timing, rate cap, small host groups (low-impact scans)\n"
+         "  --ipv6-robust: Longer IPv6 RTT/retry defaults (use with -6)\n"
+         "  --adaptive-rate: Slow scans when ICMP administratively prohibited is seen\n"
+         "  --auto-hostgroup: Tune parallel host batch size from timing and port count\n"
          "  --resume <filename>: Resume an aborted scan\n"
          "  --noninteractive: Disable runtime interactions via keyboard\n"
          "  --stylesheet <path/URL>: XSL stylesheet to transform XML output to HTML\n"
@@ -467,6 +477,10 @@ public:
     this->af                    = AF_UNSPEC;
     this->decoys                = false;
     this->raw_scan_options      = false;
+    this->siemfilename          = NULL;
+    this->siemtag               = NULL;
+    this->siem_syslog           = false;
+    this->safe_profile          = false;
   }
 
   // Pre-specified timing parameters.
@@ -481,6 +495,9 @@ public:
   double pre_scripttimeout;
 #endif
   char  *machinefilename, *kiddiefilename, *normalfilename, *xmlfilename;
+  char  *siemfilename, *siemtag;
+  bool  siem_syslog;
+  bool  safe_profile;
   bool  iflist, decoys, advanced, raw_scan_options;
   char  *exclude_spec, *exclude_file;
   char  *spoofSource, *decoy_arguments;
@@ -626,6 +643,13 @@ void parse_options(int argc, char **argv) {
     {"disable-arp-ping", no_argument, 0, 0},
     {"route-dst", required_argument, 0, 0},
     {"resume", required_argument, 0, 0},
+    {"siem-log", required_argument, 0, 0},
+    {"siem-syslog", no_argument, 0, 0},
+    {"siem-tag", required_argument, 0, 0},
+    {"safe-profile", no_argument, 0, 0},
+    {"ipv6-robust", no_argument, 0, 0},
+    {"adaptive-rate", no_argument, 0, 0},
+    {"auto-hostgroup", no_argument, 0, 0},
     {0, 0, 0, 0}
   };
 
@@ -904,6 +928,25 @@ void parse_options(int argc, char **argv) {
         } else if (strcmp(long_options[option_index].name, "oX") == 0) {
           test_file_name(optarg, long_options[option_index].name);
           delayed_options.xmlfilename = logfilename(optarg, &local_time);
+        } else if (strcmp(long_options[option_index].name, "siem-log") == 0) {
+          test_file_name(optarg, "siem-log");
+          if (delayed_options.siemfilename)
+            fatal("Only one --siem-log output filename allowed");
+          delayed_options.siemfilename = logfilename(optarg, &local_time);
+        } else if (strcmp(long_options[option_index].name, "siem-syslog") == 0) {
+          delayed_options.siem_syslog = true;
+        } else if (strcmp(long_options[option_index].name, "siem-tag") == 0) {
+          if (delayed_options.siemtag)
+            free(delayed_options.siemtag);
+          delayed_options.siemtag = strdup(optarg);
+        } else if (strcmp(long_options[option_index].name, "safe-profile") == 0) {
+          delayed_options.safe_profile = true;
+        } else if (strcmp(long_options[option_index].name, "ipv6-robust") == 0) {
+          o.ipv6_robust = true;
+        } else if (strcmp(long_options[option_index].name, "adaptive-rate") == 0) {
+          o.adaptive_rate = true;
+        } else if (strcmp(long_options[option_index].name, "auto-hostgroup") == 0) {
+          o.auto_hostgroup = true;
         } else if (strcmp(long_options[option_index].name, "oA") == 0) {
           char buf[MAXPATHLEN];
           test_file_name(optarg, long_options[option_index].name);
@@ -1503,6 +1546,25 @@ void  apply_delayed_options() {
     o.scripttimeout = delayed_options.pre_scripttimeout;
 #endif
 
+  if (delayed_options.safe_profile) {
+    o.timing_level = 2;
+    if (o.max_packet_send_rate <= 0.0f)
+      o.max_packet_send_rate = 100.0f;
+    o.setMaxHostGroupSz(MIN((unsigned int) o.maxHostGroupSz(), 32u));
+    if (delayed_options.pre_max_parallelism == -1 && o.max_parallelism == 0)
+      o.max_parallelism = 10;
+    log_write(LOG_STDOUT, "Note: --safe-profile applies Polite timing (T2), caps host group size at 32, sets max parallelism to 10 when unset, and max send rate to 100 packets/sec when unset.\n");
+  }
+  if (o.ipv6_robust && o.af() == AF_INET6) {
+    if (delayed_options.pre_max_rtt_timeout == -1)
+      o.setMaxRttTimeout(MAX(o.maxRttTimeout(), 15000));
+    if (delayed_options.pre_init_rtt_timeout == -1)
+      o.setInitialRttTimeout(MAX(o.initialRttTimeout(), 2000));
+    if (delayed_options.pre_min_rtt_timeout == -1)
+      o.setMinRttTimeout(MAX(o.minRttTimeout(), 100));
+    if (delayed_options.pre_max_retries == -1)
+      o.setMaxRetransmissions(MAX((int) o.getMaxRetransmissions(), 12));
+  }
 
   if (o.osscan) {
     if (o.af() == AF_INET)
@@ -1546,6 +1608,18 @@ void  apply_delayed_options() {
     log_open(LOG_XML, o.append_output, delayed_options.xmlfilename);
     free(delayed_options.xmlfilename);
   }
+  if (delayed_options.siemfilename || delayed_options.siem_syslog) {
+    siem_log_init(delayed_options.siemfilename, o.append_output, delayed_options.siemtag,
+                  delayed_options.siem_syslog);
+    if (delayed_options.siemfilename) {
+      free(delayed_options.siemfilename);
+      delayed_options.siemfilename = NULL;
+    }
+    if (delayed_options.siemtag) {
+      free(delayed_options.siemtag);
+      delayed_options.siemtag = NULL;
+    }
+  }
 
   if (o.verbose > 1)
     o.reason = true;
@@ -1566,6 +1640,8 @@ void  apply_delayed_options() {
 #ifndef NOLUA
   if (o.scripthelp) {
     /* Special-case open_nse for --script-help only. */
+    if (siem_log_active())
+      siem_log_close();
     open_nse();
     exit(0);
   }
@@ -1939,6 +2015,8 @@ int nmap_main(int argc, char *argv[]) {
 
   if (delayed_options.iflist) {
     print_iflist();
+    if (siem_log_active())
+      siem_log_close();
     exit(0);
   }
 
@@ -2008,6 +2086,11 @@ int nmap_main(int argc, char *argv[]) {
   log_write(LOG_NORMAL | LOG_MACHINE, "# ");
   log_write(LOG_NORMAL | LOG_MACHINE, "%s %s scan initiated %s as: %s", NMAP_NAME, NMAP_VERSION, mytime, join_quoted(argv, argc).c_str());
   log_write(LOG_NORMAL | LOG_MACHINE, "\n");
+
+  if (siem_log_active()) {
+    std::string quoted_args = join_quoted(argv, argc);
+    siem_log_scan_start(quoted_args.c_str());
+  }
 
   /* Before we randomize the ports scanned, lets output them to machine
      parseable output */
@@ -2106,6 +2189,7 @@ int nmap_main(int argc, char *argv[]) {
 
   do {
     ideal_scan_group_sz = determineScanGroupSize(o.numhosts_scanned, &ports);
+    nmap_adaptive_apply_pending(&o);
 
     while (Targets.size() < ideal_scan_group_sz) {
       o.current_scantype = HOST_DISCOVERY;
@@ -2307,6 +2391,7 @@ int nmap_main(int argc, char *argv[]) {
                   currenths->NameIP(hostname, sizeof(hostname)));
         log_write(LOG_MACHINE, "Host: %s (%s)\tStatus: Timeout\n",
                   currenths->targetipstr(), currenths->HostName());
+        siem_log_host(currenths, "timeout");
       } else {
         /* --open means don't show any hosts without open ports. */
         if (o.openOnly() && !currenths->ports.hasOpenPorts())

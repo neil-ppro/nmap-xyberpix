@@ -1,0 +1,30 @@
+---
+description: Always update CHANGELOG for nmap-ppro changes; match Nmap entry style
+alwaysApply: true
+---
+
+# CHANGELOG (required)
+
+This fork (`nmap-ppro`) and any work in this repository **must** record user-relevant changes in the root **`CHANGELOG`** file (same format as upstream Nmap).
+
+## When to update
+
+Add an entry **in the same PR or commit** that introduces the change, whenever you:
+
+- Add or change **features** (CLI flags, output, SIEM, platforms, build).
+- Fix **bugs** or **security** issues worth noting.
+- Change **default behavior**, **compatibility**, or **documentation** that users/operators rely on.
+- Change **CI**, **packaging**, or **supported platforms** in a way that matters to builders.
+
+Skip CHANGELOG only for trivial internal refactors with **no** observable effect.
+
+## How to write entries
+
+- Insert **new entries at the top** (below the header lines), **newest first**.
+- Use the existing style: lines starting with `o`, optional bracket tags like `[SIEM]`, `[nmap-ppro]`, `[GH#…]` when applicable.
+- One logical change can be one `o` block; keep prose clear and complete sentences.
+- If multiple areas change, split into multiple `o` bullets or one well-scoped paragraph.
+
+## Verification
+
+Before finishing a task, confirm **`CHANGELOG`** includes a matching entry for anything a release note should mention.

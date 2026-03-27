@@ -116,6 +116,7 @@ void serviceDeductions::erase() {
   this->devicetype = NULL;
   this->service_tunnel = SERVICE_TUNNEL_NONE;
   this->service_fp = NULL;
+  this->tls_fp[0] = '\0';
   this->dtype = SERVICE_DETECTION_TABLE;
 }
 
@@ -183,6 +184,7 @@ serviceDeductions::serviceDeductions() {
   devicetype = NULL;
   service_tunnel = SERVICE_TUNNEL_NONE;
   service_fp = NULL;
+  tls_fp[0] = '\0';
   dtype = SERVICE_DETECTION_TABLE;
 }
 
@@ -312,7 +314,7 @@ void PortList::setServiceProbeResults(u16 portno, int protocol,
   enum service_tunnel_type tunnel, const char *product, const char *version,
   const char *extrainfo, const char *hostname, const char *ostype,
   const char *devicetype, const std::vector<const char *> *cpe,
-  const char *fingerprint) {
+  const char *fingerprint, const char *tls_fp_in) {
   std::vector<char *>::iterator it;
   Port *port;
   char *p;
@@ -357,6 +359,13 @@ void PortList::setServiceProbeResults(u16 portno, int protocol,
     port->service->service_fp = strdup(fingerprint);
   else
     port->service->service_fp = NULL;
+
+  if (tls_fp_in && tls_fp_in[0]) {
+    strncpy(port->service->tls_fp, tls_fp_in, sizeof(port->service->tls_fp) - 1);
+    port->service->tls_fp[sizeof(port->service->tls_fp) - 1] = '\0';
+  } else {
+    port->service->tls_fp[0] = '\0';
+  }
 
   port->service->product = cstringSanityCheck(product, 80);
   port->service->version = cstringSanityCheck(version, 80);

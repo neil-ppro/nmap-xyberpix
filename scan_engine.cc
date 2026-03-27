@@ -68,6 +68,7 @@
 #include "portreasons.h"
 #include <dnet.h>
 #include "scan_engine.h"
+#include "scan_adaptive.h"
 #include "scan_engine_connect.h"
 #include "scan_engine_raw.h"
 #include "timing.h"
@@ -1243,6 +1244,19 @@ int determineScanGroupSize(int hosts_scanned_so_far,
   }
 
   groupsize = box(o.minHostGroupSz(), o.maxHostGroupSz(), groupsize);
+
+  if (o.auto_hostgroup) {
+    int cap = 256;
+    if (o.timing_level <= 2)
+      cap = 64;
+    else if (o.timing_level >= 4)
+      cap = 512;
+    {
+      int portfactor = MAX(1, ports->tcp_count / 100);
+      cap = MAX(8, cap / portfactor);
+    }
+    groupsize = MIN(groupsize, cap);
+  }
 
   if (o.max_ips_to_scan && (o.max_ips_to_scan - hosts_scanned_so_far) < (unsigned int)groupsize)
     // don't scan more randomly generated hosts than was specified
@@ -2796,6 +2810,7 @@ void ultra_scan(std::vector<Target *> &Targets, const struct scan_lists *ports,
     waitForResponses(&USI);
     // printf("TRACE: Finished waitForResponses() at %.4fs\n", o.TimeSinceStartMS(&USI.now) / 1000.0);
     processData(&USI);
+    nmap_adaptive_apply_pending(&o);
 
     if (keyWasPressed()) {
       // This prints something like

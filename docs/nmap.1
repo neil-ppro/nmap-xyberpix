@@ -1455,6 +1455,26 @@ These options do not have an effect during the host discovery phase of a scan\&.
 The primary use of these options is to specify a large minimum group size so that the full scan runs more quickly\&. A common choice is 256 to scan a network in /24 sized chunks\&. For a scan with many ports, exceeding that number is unlikely to help much\&. For scans of just a few port numbers, host group sizes of 2048 or more may be helpful\&.
 .RE
 .PP
+\fB\-\-auto\-hostgroup\fR (Tune default parallel batch sizes)
+.RS 4
+When set, Nmap reduces the computed host batch size based on timing template and the number of TCP ports in the scan list, so results appear sooner on large multi\-port scans\&. Explicit \fB\-\-min\-hostgroup\fR / \fB\-\-max\-hostgroup\fR limits still apply\&.
+.RE
+.PP
+\fB\-\-safe\-profile\fR (Conservative scan defaults)
+.RS 4
+Applies Polite timing (\fB\-T2\fR), caps maximum host group size at 32, sets maximum parallelism to 10 when neither \fB\-M\fR nor \fB\-\-max\-parallelism\fR was given, and sets a maximum packet send rate of 100/s when no \fB\-\-max\-rate\fR was requested\&. A short notice is printed at startup\&.
+.RE
+.PP
+\fB\-\-ipv6\-robust\fR (IPv6 timing defaults)
+.RS 4
+When used with IPv6 scanning (\fB\-6\fR), increases maximum RTT, initial RTT, minimum RTT, and retransmission limits unless you already set the corresponding timing options\&. Intended for higher\-latency or lossy paths\&.
+.RE
+.PP
+\fB\-\-adaptive\-rate\fR (Slow down on admin\-prohibited ICMP)
+.RS 4
+During raw scans, increases scan delays and (if \fB\-\-max\-rate\fR was set) reduces the maximum send rate when ICMPv4 destination unreachable codes 9, 10, or 13 or ICMPv6 administratively prohibited unreachable messages are observed\&.
+.RE
+.PP
 \fB\-\-min\-parallelism \fR\fB\fInumprobes\fR\fR; \fB\-\-max\-parallelism \fR\fB\fInumprobes\fR\fR (Adjust probe parallelization)
 .RS 4
 These options control the total number of probes that may be outstanding for a host group\&. They are used for port scanning and host discovery\&. By default, Nmap calculates an ever\-changing ideal parallelism based on network performance\&. If packets are being dropped, Nmap slows down and allows fewer outstanding probes\&. The ideal probe number slowly rises as the network proves itself worthy\&. These options place minimum or maximum bounds on that variable\&. By default, the ideal parallelism can drop to one if the network proves unreliable and rise to several hundred in perfect conditions\&.
@@ -2104,6 +2124,62 @@ to store scan results in normal, XML, and grepable formats at once\&. They are s
 on Unix or
 c:\ehacking\esco
 on Windows\&.
+.RE
+.PP
+\fB\-\-siem\-log \fR\fB\fIfile\fR\fR (SIEM / analytics JSON log)
+.RS 4
+Append a newline\-delimited JSON log of scan events to
+\fIfile\fR
+for ingestion by security analytics platforms (Splunk, Elastic, etc\&.)\&. Events include
+\fBscan_start\fR
+(with command line, scanner host name, and Nmap version),
+\fBhost\fR
+(up/down/timeout and target addresses),
+\fBport\fR
+(port/protocol/state/service when ports are listed),
+\fBos_summary\fR
+(OS detection outcome and best OS name guesses),
+\fBservice_summary\fR
+(consolidated hostname/OS/device/CPE hints from service detection),
+and
+\fBscan_end\fR
+(host counts and elapsed time)\&. Use
+\fB\-\fR
+as the file name to write events to standard output\&. Forward the file with your log shipper or use
+\fB\-\-siem\-syslog\fR\&.
+.RE
+.PP
+\fB\-\-siem\-syslog\fR (RFC 5424 to system log, no SIEM file)
+.RS 4
+Send the same JSON events as RFC 5424 syslog messages (one line per event)\&. The line format is:
+priority 14 (user facility, informational), version 1, UTC timestamp, hostname,
+\fBnmap\fR,
+process ID, message ID
+\fBsiem\fR,
+no structured data, and the UTF\-8 JSON payload as the MSG\&. On Unix\-like systems, Nmap first tries
+\fBlogger\fR(1)
+(several common paths); if none is available it uses the
+\fBsyslog\fR(3)
+API with the same RFC 5424 string\&. On Windows, events are written to the Application log via
+\fBReportEvent\fR
+(source
+\fBNmap\fR,
+event ID 0x1001) with the RFC 5424 line as the message string\&. Does not create a
+\fB\-\-siem\-log\fR
+file; combine with
+\fB\-\-siem\-log\fR
+to write NDJSON to disk and mirror to the system log\&. On AmigaOS,
+\fBlogger\fR(1)
+must be available; there is no syslog fallback\&.
+.RE
+.PP
+\fB\-\-siem\-tag \fR\fB\fIstring\fR\fR (Label SIEM events)
+.RS 4
+When
+\fB\-\-siem\-log\fR
+or
+\fB\-\-siem\-syslog\fR
+is used, include the given tag on every JSON event (for example site name or environment)\&.
 .RE
 .PP
 \fBVerbosity and debugging options\fR

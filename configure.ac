@@ -1119,6 +1119,27 @@ AC_SUBST(NCAT_UNINSTALL)
 AC_SUBST(NCAT_CLEAN)
 AC_SUBST(NCAT_DIST_CLEAN)
 
+dnl Optional sanitizers for development (GCC or Clang)
+AC_ARG_ENABLE([asan],
+  AS_HELP_STRING([--enable-asan], [Build with AddressSanitizer (GCC or Clang; for debugging)]),
+  [enable_asan=$enableval], [enable_asan=no])
+AC_ARG_ENABLE([ubsan],
+  AS_HELP_STRING([--enable-ubsan], [Build with UndefinedBehaviorSanitizer (GCC or Clang; for debugging)]),
+  [enable_ubsan=$enableval], [enable_ubsan=no])
+
+if test "x$enable_asan" = "xyes"; then
+  SANFLAGS="-fsanitize=address -fno-omit-frame-pointer -g"
+  CFLAGS="$CFLAGS $SANFLAGS"
+  CXXFLAGS="$CXXFLAGS $SANFLAGS"
+  LDFLAGS="$LDFLAGS -fsanitize=address"
+fi
+if test "x$enable_ubsan" = "xyes"; then
+  UBFLAGS="-fsanitize=undefined -g"
+  CFLAGS="$CFLAGS $UBFLAGS"
+  CXXFLAGS="$CXXFLAGS $UBFLAGS"
+  LDFLAGS="$LDFLAGS -fsanitize=undefined"
+fi
+
 AC_OUTPUT(Makefile libnetutil/Makefile)
 
 # Krad ASCII ART#!#@$!@#$

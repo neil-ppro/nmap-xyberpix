@@ -286,6 +286,10 @@ class NmapOps {
   bool always_resolve;
   bool resolve_all;
   bool unique;
+  /* nmap-ppro: scan policy helpers */
+  bool adaptive_rate;  /* --adaptive-rate */
+  bool auto_hostgroup;  /* --auto-hostgroup */
+  bool ipv6_robust;     /* --ipv6-robust */
   char *dns_servers;
 
   /* Do IPv4 ARP or IPv6 ND scan of directly connected Ethernet hosts, even if

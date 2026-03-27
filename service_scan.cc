@@ -88,6 +88,8 @@
    libpcap. */
 #define _WINSOCKAPI_
 #include <openssl/ssl.h>
+#include <openssl/md5.h>
+#include <openssl/x509.h>
 #endif
 
 #if TIME_WITH_SYS_TIME
@@ -154,6 +156,7 @@ public:
   // SSL connections.  It's overwritten each time.  void* is used so we don't
   // need to #ifdef HAVE_OPENSSL all over.  We'll cast later as needed.
   void *ssl_session;
+  char tls_fp_hex[33]; /* MD5 hex of negotiated TLS metadata when probing SSL */
   // if a match was found (see above), this tells whether it was a "soft"
   // or hard match.  It is always false if no match has been found.
   bool softMatchFound;
@@ -1629,6 +1632,7 @@ ServiceNFO::ServiceNFO(AllProbes *newAP) {
   cpe_a_matched[0] = cpe_h_matched[0] = cpe_o_matched[0] = '\0';
   tunnel = SERVICE_TUNNEL_NONE;
   ssl_session = NULL;
+  tls_fp_hex[0] = '\0';
   softMatchFound = false;
   servicefplen = servicefpalloc = 0;
   servicefp = NULL;
@@ -2341,6 +2345,50 @@ static int launchSomeServiceProbes(nsock_pool nsp, ServiceGroup *SG) {
   return 0;
 }
 
+#if HAVE_OPENSSL
+static void fill_tls_fp(ServiceNFO *svc, nsock_iod nsi) {
+  svc->tls_fp_hex[0] = '\0';
+  if (!nsock_iod_check_ssl(nsi))
+    return;
+  SSL *ssl = (SSL *) nsock_iod_get_ssl(nsi);
+  if (!ssl)
+    return;
+  const SSL_CIPHER *ciph = SSL_get_current_cipher(ssl);
+  const char *cname = ciph ? SSL_CIPHER_get_name(ciph) : "";
+  const char *ver = SSL_get_version(ssl);
+  unsigned int chainlen = 0;
+  STACK_OF(X509) *ch = SSL_get_peer_cert_chain(ssl);
+
+  if (ch) {
+    int skn = sk_X509_num(ch);
+
+    if (skn > 0)
+      chainlen = (unsigned int) skn;
+  }
+  const unsigned char *alpn = NULL;
+  unsigned int alpnlen = 0;
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L
+  SSL_get0_alpn_selected(ssl, &alpn, &alpnlen);
+#endif
+  char buf[512];
+  char alpn_esc[128];
+
+  alpn_esc[0] = '\0';
+  /* Do not trust alpnlen from peer without a strict upper bound */
+  if (alpn && alpnlen > 0 && alpnlen < sizeof(alpn_esc)) {
+    memcpy(alpn_esc, alpn, alpnlen);
+    alpn_esc[alpnlen] = '\0';
+  }
+  Snprintf(buf, sizeof(buf), "%s|%s|%u|%s",
+           ver ? ver : "", cname ? cname : "", chainlen, alpn_esc);
+  unsigned char md[MD5_DIGEST_LENGTH];
+
+  MD5((const unsigned char *)buf, strlen(buf), md);
+  for (int i = 0; i < MD5_DIGEST_LENGTH; i++)
+    Snprintf(svc->tls_fp_hex + i * 2, 3, "%02x", md[i]);
+  svc->tls_fp_hex[32] = '\0';
+}
+#endif
 
 static void servicescan_connect_handler(nsock_pool nsp, nsock_event nse, void *mydata) {
   nsock_iod nsi = nse_iod(nse);
@@ -2369,6 +2417,7 @@ static void servicescan_connect_handler(nsock_pool nsp, nsock_event nse, void *m
       } else {
         svc->ssl_session = (SSL_SESSION *)(nsock_iod_get_ssl_session(nsi, 1));
       }
+      fill_tls_fp(svc, nsi);
     }
 #endif
 
@@ -2733,13 +2782,15 @@ std::list<ServiceNFO *>::iterator svc;
                                           *(*svc)->ostype_matched? (*svc)->ostype_matched : NULL,
                                           *(*svc)->devicetype_matched? (*svc)->devicetype_matched : NULL,
                                           (cpe.size() > 0) ? &cpe : NULL,
-                                          shouldWePrintFingerprint(*svc) ? (*svc)->getServiceFingerprint(NULL) : NULL);
+                                          shouldWePrintFingerprint(*svc) ? (*svc)->getServiceFingerprint(NULL) : NULL,
+                                          (*svc)->tls_fp_hex[0] ? (*svc)->tls_fp_hex : NULL);
    }  else {
        (*svc)->target->ports.setServiceProbeResults((*svc)->portno, (*svc)->proto,
                                             (*svc)->probe_state, NULL,
                                             (*svc)->tunnel, NULL, NULL, NULL, NULL, NULL, NULL,
                                             NULL,
-                                            (*svc)->getServiceFingerprint(NULL));
+                                            (*svc)->getServiceFingerprint(NULL),
+                                            (*svc)->tls_fp_hex[0] ? (*svc)->tls_fp_hex : NULL);
    }
  }
 }
@@ -2766,7 +2817,8 @@ static void remove_excluded_ports(AllProbes *AP, ServiceGroup *SG) {
                                         PROBESTATE_EXCLUDED, NULL,
                                         SERVICE_TUNNEL_NONE,
                                         "Excluded from version scan", NULL,
-                                        NULL, NULL, NULL, NULL, NULL, NULL);
+                                        NULL, NULL, NULL, NULL, NULL, NULL,
+                                        NULL);
 
       SG->services_remaining.erase(i);
       SG->services_finished.push_back(svc);

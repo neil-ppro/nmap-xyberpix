@@ -608,7 +608,8 @@ static int l_set_port_version (lua_State *L)
       probestate, name, tunnel, product,
       version, extrainfo, hostname, ostype, devicetype,
       (cpe.size() > 0) ? &cpe : NULL,
-      probestate==PROBESTATE_FINISHED_HARDMATCHED ? NULL : service_fp);
+      probestate==PROBESTATE_FINISHED_HARDMATCHED ? NULL : service_fp,
+      NULL);
   return 0;
 }
 

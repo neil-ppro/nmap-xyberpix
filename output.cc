@@ -80,13 +80,16 @@
 #include "nmap_error.h"
 #include "utils.h"
 #include "xml.h"
+#include "siem_log.h"
 #include "nbase.h"
 #include "libnetutil/netutil.h"
 #include <nsock.h>
 
 #include <math.h>
+#include <cstring>
 
 #include <set>
+#include <string>
 #include <vector>
 #include <list>
 #include <sstream>
@@ -199,6 +202,8 @@ static void print_xml_service(const struct serviceDeductions *sd) {
 
   if (sd->service_tunnel == SERVICE_TUNNEL_SSL)
     xml_attribute("tunnel", "ssl");
+  if (sd->tls_fp[0])
+    xml_attribute("tlsfp", "%s", sd->tls_fp);
   xml_attribute("method", "%s", (sd->dtype == SERVICE_DETECTION_TABLE) ? "table" : "probed");
   xml_attribute("conf", "%i", sd->name_confidence);
 
@@ -704,6 +709,9 @@ void printportoutput(const Target *currenths, const PortList *plist) {
         xml_end_tag(); /* port */
         xml_newline();
         rowno++;
+        if (siem_log_active())
+          siem_log_port(currenths, (unsigned short) current->portno, "ip",
+                        state, portinfo, "");
       }
     }
   } else {
@@ -716,7 +724,7 @@ void printportoutput(const Target *currenths, const PortList *plist) {
           log_write(LOG_MACHINE, ", ");
         else
           first = 0;
-        strcpy(protocol, IPPROTO2STR(current->proto));
+        Strncpy(protocol, IPPROTO2STR(current->proto), sizeof(protocol));
         Snprintf(portinfo, sizeof(portinfo), "%d/%s", current->portno, protocol);
         state = statenum2str(current->state);
         plist->getServiceDeductions(current->portno, current->proto, &sd);
@@ -752,7 +760,8 @@ void printportoutput(const Target *currenths, const PortList *plist) {
           *p = '|';
           p++;
         }
-        if (sd.name || sd.service_fp || sd.service_tunnel != SERVICE_TUNNEL_NONE) {
+        if (sd.name || sd.service_fp || sd.service_tunnel != SERVICE_TUNNEL_NONE
+            || sd.tls_fp[0]) {
           p = serviceinfo;
           while ((p = strchr(p, '/'))) {
             *p = '|';
@@ -764,6 +773,10 @@ void printportoutput(const Target *currenths, const PortList *plist) {
         }
         log_write(LOG_MACHINE, "%d/%s/%s//%s//%s/", current->portno,
                   state, protocol, serviceinfo, grepvers);
+
+        if (siem_log_active())
+          siem_log_port(currenths, current->portno, protocol, state,
+                        serviceinfo, fullversion);
 
         xml_open_start_tag("port");
         xml_attribute("protocol", "%s", protocol);
@@ -780,7 +793,8 @@ void printportoutput(const Target *currenths, const PortList *plist) {
         }
         xml_close_empty_tag();
 
-        if (sd.name || sd.service_fp || sd.service_tunnel != SERVICE_TUNNEL_NONE)
+        if (sd.name || sd.service_fp || sd.service_tunnel != SERVICE_TUNNEL_NONE
+            || sd.tls_fp[0])
           print_xml_service(&sd);
 
         rowno++;
@@ -1425,6 +1439,7 @@ void write_host_status(const Target *currenths) {
     log_write(LOG_MACHINE, "Host: %s (%s)\tStatus: Unknown\n",
               currenths->targetipstr(), currenths->HostName());
     write_xml_initial_hostinfo(currenths, "unknown");
+    siem_log_host(currenths, "unknown");
   } else if (currenths->weird_responses) {
     /* SMURF ADDRESS */
     /* Write xml "down" or "up" based on flags and the smurf info */
@@ -1438,6 +1453,7 @@ void write_host_status(const Target *currenths) {
     log_write(LOG_MACHINE, "Host: %s (%s)\tStatus: Smurf (%d responses)\n",
               currenths->targetipstr(), currenths->HostName(),
               currenths->weird_responses);
+    siem_log_host(currenths, (currenths->flags & HOST_UP) ? "smurf_up" : "smurf_down");
 
     if (o.noportscan) {
       log_write(LOG_PLAIN, "Host seems to be a subnet broadcast address (returned %d extra pings).%s\n",
@@ -1465,9 +1481,11 @@ void write_host_status(const Target *currenths) {
 
       log_write(LOG_MACHINE, "Host: %s (%s)\tStatus: Up\n",
                 currenths->targetipstr(), currenths->HostName());
+      siem_log_host(currenths, "up");
     } else if (currenths->flags & HOST_DOWN) {
       log_write(LOG_MACHINE, "Host: %s (%s)\tStatus: Down\n",
                 currenths->targetipstr(), currenths->HostName());
+      siem_log_host(currenths, "down");
     }
   }
 }
@@ -1557,16 +1575,17 @@ static void printosclassificationoutput(const struct
           if (OSR->OSC[classno]->OS_Generation
               && !strstr(familygenerations[familyno],
                          OSR->OSC[classno]->OS_Generation)) {
-            int flen = strlen(familygenerations[familyno]);
+            char *const fg = familygenerations[familyno];
+            size_t flen = strlen(fg);
+            size_t genlen = strlen(OSR->OSC[classno]->OS_Generation);
             // We add it, preceded by | if something is already there
-            if (flen + 2 + strlen(OSR->OSC[classno]->OS_Generation) >=
-                sizeof(familygenerations[familyno]))
+            if (flen + 1 + genlen >= sizeof(familygenerations[familyno]))
               fatal("buffer 0verfl0w of familygenerations");
-            if (*familygenerations[familyno])
-              strcat(familygenerations[familyno], "|");
-            strncat(familygenerations[familyno],
-                    OSR->OSC[classno]->OS_Generation,
-                    sizeof(familygenerations[familyno]) - flen - 1);
+            if (flen > 0) {
+              fg[flen++] = '|';
+              fg[flen] = '\0';
+            }
+            memcpy(fg + flen, OSR->OSC[classno]->OS_Generation, genlen + 1);
           }
           break;
         }
@@ -2002,9 +2021,14 @@ void printosscanoutput(const Target *currenths) {
         fatal("STRANGE ERROR #3877 -- please report to fyodor@nmap.org\n");
       if (p != numlst)
         *p++ = ',';
-      sprintf(p, "%X", currenths->seq.seqs[i]);
-      while (*p)
-        p++;
+      {
+        size_t rem = sizeof(numlst) - (size_t) (p - numlst);
+        int w = Snprintf(p, rem, "%X", currenths->seq.seqs[i]);
+
+        if (w < 0 || (size_t) w >= rem)
+          fatal("STRANGE ERROR #3877b -- please report to fyodor@nmap.org\n");
+        p += w;
+      }
     }
 
     xml_open_start_tag("tcpsequence");
@@ -2026,9 +2050,14 @@ void printosscanoutput(const Target *currenths) {
         fatal("STRANGE ERROR #3876 -- please report to fyodor@nmap.org\n");
       if (p != numlst)
         *p++ = ',';
-      sprintf(p, "%hX", currenths->seq.ipids[i]);
-      while (*p)
-        p++;
+      {
+        size_t rem = sizeof(numlst) - (size_t) (p - numlst);
+        int w = Snprintf(p, rem, "%hX", currenths->seq.ipids[i]);
+
+        if (w < 0 || (size_t) w >= rem)
+          fatal("STRANGE ERROR #3876b -- please report to fyodor@nmap.org\n");
+        p += w;
+      }
     }
     xml_open_start_tag("ipidsequence");
     xml_attribute("class", "%s", ipidclass2ascii(currenths->seq.ipid_seqclass));
@@ -2047,9 +2076,14 @@ void printosscanoutput(const Target *currenths) {
         fatal("STRANGE ERROR #3878 -- please report to fyodor@nmap.org\n");
       if (p != numlst)
         *p++ = ',';
-      sprintf(p, "%X", currenths->seq.timestamps[i]);
-      while (*p)
-        p++;
+      {
+        size_t rem = sizeof(numlst) - (size_t) (p - numlst);
+        int w = Snprintf(p, rem, "%X", currenths->seq.timestamps[i]);
+
+        if (w < 0 || (size_t) w >= rem)
+          fatal("STRANGE ERROR #3878b -- please report to fyodor@nmap.org\n");
+        p += w;
+      }
     }
 
     xml_open_start_tag("tcptssequence");
@@ -2060,6 +2094,33 @@ void printosscanoutput(const Target *currenths) {
     xml_close_empty_tag();
     xml_newline();
   }
+
+  if (siem_log_active()) {
+    const char *ores = "unknown";
+    switch (FPR->overall_results) {
+    case OSSCAN_SUCCESS:
+      ores = "success";
+      break;
+    case OSSCAN_NOMATCHES:
+      ores = "nomatches";
+      break;
+    case OSSCAN_TOOMANYMATCHES:
+      ores = "toomanymatches";
+      break;
+    default:
+      break;
+    }
+    std::string osnames;
+    int nlim = MIN(10, FPR->num_matches);
+    for (i = 0; i < nlim; i++) {
+      if (i)
+        osnames += "|";
+      osnames += FPR->matches[i]->OS_name;
+    }
+    double acc = (FPR->num_matches > 0) ? FPR->accuracy[0] : -1.0;
+    siem_log_os_summary(currenths, ores, osnames.c_str(), acc);
+  }
+
   log_flush_all();
 }
 
@@ -2195,6 +2256,33 @@ void printserviceinfooutput(const Target *currenths) {
         log_write(LOG_PLAIN, ", %s", &cpe_tbl[i][0]);
     }
     delim = "; ";
+  }
+
+  if (siem_log_active()) {
+    std::string hs, oses, devs, cpes;
+    for (i = 0; i < MAX_SERVICE_INFO_FIELDS; i++) {
+      if (hostname_tbl[i][0]) {
+        if (!hs.empty())
+          hs += ",";
+        hs += &hostname_tbl[i][0];
+      }
+      if (ostype_tbl[i][0]) {
+        if (!oses.empty())
+          oses += ",";
+        oses += &ostype_tbl[i][0];
+      }
+      if (devicetype_tbl[i][0]) {
+        if (!devs.empty())
+          devs += ",";
+        devs += &devicetype_tbl[i][0];
+      }
+      if (cpe_tbl[i][0]) {
+        if (!cpes.empty())
+          cpes += ",";
+        cpes += &cpe_tbl[i][0];
+      }
+    }
+    siem_log_service_summary(currenths, hs.c_str(), oses.c_str(), devs.c_str(), cpes.c_str());
   }
 
   log_write(LOG_PLAIN, "\n");
@@ -2555,6 +2643,10 @@ void printfinaloutput() {
 
   xml_end_tag(); /* nmaprun */
   xml_newline();
+  if (siem_log_active()) {
+    siem_log_scan_end(o.numhosts_scanned, o.numhosts_up, o.TimeSinceStart(&tv));
+    siem_log_close();
+  }
   log_flush_all();
 }
 

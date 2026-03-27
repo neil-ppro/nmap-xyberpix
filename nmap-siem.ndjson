@@ -1,0 +1,6 @@
+{"event":"scan_start","scan_id":"69c5c151-00db1c4fc81924e0","nmap_version":"7.98SVN","platform":"arm-apple-darwin25.3.0","scanner_hostname":"neil.fryer-MXLC63RHWT","pid":4428,"args":"./nmap -sS -sV -PN --siem-tag prod --siem-log /Users/neil.fryer/Projects/nmap-ppro/nmap-siem.ndjson ppro.com","tag":"prod"}
+{"event":"host","scan_id":"69c5c151-00db1c4fc81924e0","target_ip":"23.185.0.4","target_hostname":"","status":"up","scanner_hostname":"neil.fryer-MXLC63RHWT","tag":"prod"}
+{"event":"port","scan_id":"69c5c151-00db1c4fc81924e0","target_ip":"23.185.0.4","port":53,"protocol":"tcp","state":"open","service":"domain","version":"(generic dns response: NXDOMAIN)","scanner_hostname":"neil.fryer-MXLC63RHWT","tag":"prod"}
+{"event":"port","scan_id":"69c5c151-00db1c4fc81924e0","target_ip":"23.185.0.4","port":80,"protocol":"tcp","state":"open","service":"http","version":"Pantheon","scanner_hostname":"neil.fryer-MXLC63RHWT","tag":"prod"}
+{"event":"port","scan_id":"69c5c151-00db1c4fc81924e0","target_ip":"23.185.0.4","port":443,"protocol":"tcp","state":"open","service":"ssl","version":null,"scanner_hostname":"neil.fryer-MXLC63RHWT","tag":"prod"}
+{"event":"scan_end","scan_id":"69c5c151-00db1c4fc81924e0","scanner_hostname":"neil.fryer-MXLC63RHWT","hosts_scanned":1,"hosts_up":1,"elapsed_sec":20.267,"tag":"prod"}

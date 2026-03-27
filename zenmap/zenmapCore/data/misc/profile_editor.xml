@@ -12,6 +12,7 @@
 		<group name="Source"/>
 		<group name="Other"/>
 		<group name="Timing"/>
+		<group name="SIEM"/>
 	</groups>
 	<Scan label="Scan options">
 		<target label="Targets (optional): "/>
@@ -107,4 +108,13 @@ short_desc="SCTP is a layer 4 protocol used mostly for telephony related applica
 		<option_check option="--max-scan-delay" label="Max scan delay" short_desc="Do not allow the scan delay (time delay between successive probes) to grow larger than the given amount of time. Time is in seconds by default, or may be followed by a suffix of 'ms' for milliseconds, 's' for seconds, 'm' for minutes, or 'h' for hours." example="20"/>
 		<option_check option="--scan-delay" label="Min delay between probes" short_desc="Wait at least the given amount of time between each probe sent to a given host. Time is in seconds by default, or may be followed by a suffix of 'ms' for milliseconds, 's' for seconds, 'm' for minutes, or 'h' for hours." example="4s; 2m"/>
 	</Timing>
+	<SIEM label="SIEM &amp; scan policy (nmap-ppro)">
+		<option_check option="--safe-profile" label="Safe profile" short_desc="Use conservative timing and rate limits suitable for sensitive networks (nmap-ppro)." example=""/>
+		<option_check option="--ipv6-robust" label="IPv6-robust discovery" short_desc="Prefer discovery and timing behavior that works more reliably on IPv6 paths (nmap-ppro)." example=""/>
+		<option_check option="--adaptive-rate" label="Adaptive rate" short_desc="Adjust scan rate based on network conditions (nmap-ppro)." example=""/>
+		<option_check option="--auto-hostgroup" label="Auto host group" short_desc="Automatically tune parallel host batch size (nmap-ppro)." example=""/>
+		<option_check option="--siem-syslog" label="SIEM: syslog" short_desc="Also emit SIEM-oriented events to syslog (nmap-ppro)." example=""/>
+		<option_check option="--siem-log" label="SIEM: NDJSON log file" short_desc="Append SIEM-friendly NDJSON lines to this file, or use - for stdout (nmap-ppro)." example="/var/log/nmap-siem.ndjson"/>
+		<option_check option="--siem-tag" label="SIEM: tag" short_desc="Tag emitted SIEM records (e.g. site or scan name) (nmap-ppro)." example="prod-east"/>
+	</SIEM>
 </interface>

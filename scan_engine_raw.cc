@@ -63,6 +63,7 @@
 
 #include "nmap_error.h"
 #include "NmapOps.h"
+#include "scan_adaptive.h"
 #include "Target.h"
 #include "payload.h"
 #include "scan_engine.h"
@@ -1887,6 +1888,8 @@ bool get_pcap_result(UltraScanInfo *USI, struct timeval *stime) {
           case 10: /* dest host admin prohibited */
           case 13: /* communication admin. prohibited */
             newstate = PORT_FILTERED;
+            if (o.adaptive_rate)
+              nmap_adaptive_icmp_admin_seen();
             break;
 
           default:
@@ -1994,6 +1997,8 @@ bool get_pcap_result(UltraScanInfo *USI, struct timeval *stime) {
           case ICMPV6_UNREACH_PROHIB:
             current_reason = ER_ADMINPROHIBITED;
             newstate = PORT_FILTERED;
+            if (o.adaptive_rate)
+              nmap_adaptive_icmp_admin_seen();
             break;
           case ICMPV6_UNREACH_SCOPE:
             current_reason = ER_BEYONDSCOPE;
@@ -2006,6 +2011,8 @@ bool get_pcap_result(UltraScanInfo *USI, struct timeval *stime) {
           case ICMPV6_UNREACH_FILTER_PROHIB:
             current_reason = ER_ADMINPROHIBITED;
             newstate = PORT_FILTERED;
+            if (o.adaptive_rate)
+              nmap_adaptive_icmp_admin_seen();
             break;
           case ICMPV6_UNREACH_REJECT_ROUTE:
             current_reason = ER_REJECTROUTE;
