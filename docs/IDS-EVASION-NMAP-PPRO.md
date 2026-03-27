@@ -17,7 +17,8 @@ microseconds **between** successive decoy packets in each batch (not after the
 last). That spreads the burst in time without changing which addresses are used.
 
 **`--decoy-stagger-random`** randomizes each gap uniformly in **`[1, usec]`**
-when **`usec` > 1`**. It has no effect unless **`--decoy-stagger`** is set to a
+when **`usec` > 1** (rejection sampling over 32-bit draws, so the distribution is
+not modulo-skewed). It has no effect unless **`--decoy-stagger`** is set to a
 positive value; Nmap may warn if the random flag is set without a positive stagger.
 
 For **IPv4** raw decoy probes, each decoy packet uses its **own IP ID**, so decoys

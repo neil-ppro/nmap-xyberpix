@@ -137,6 +137,8 @@
 #include <sys/utsname.h>
 #endif
 
+#include <cerrno>
+#include <cstdlib>
 #include <string>
 #include <sstream>
 #include <vector>
@@ -952,9 +954,13 @@ void parse_options(int argc, char **argv) {
         } else if (strcmp(long_options[option_index].name, "auto-hostgroup") == 0) {
           o.auto_hostgroup = true;
         } else if (strcmp(long_options[option_index].name, "decoy-stagger") == 0) {
-          o.decoy_stagger_usec = atoi(optarg);
-          if (o.decoy_stagger_usec < 0 || o.decoy_stagger_usec > 1000000)
-            fatal("--decoy-stagger must be between 0 and 1000000 microseconds.");
+          char *endp = NULL;
+          errno = 0;
+          long v = strtol(optarg, &endp, 10);
+          if (errno != 0 || endp == optarg || *endp != '\0'
+              || v < 0 || v > 1000000L)
+            fatal("--decoy-stagger must be a decimal integer from 0 to 1000000 microseconds.");
+          o.decoy_stagger_usec = (int) v;
         } else if (strcmp(long_options[option_index].name, "decoy-stagger-random") == 0) {
           o.decoy_stagger_random = true;
         } else if (strcmp(long_options[option_index].name, "oA") == 0) {

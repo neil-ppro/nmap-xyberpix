@@ -8,6 +8,11 @@ o [nmap-ppro] Decoy scanning hardening: --decoy-stagger <usec> and
   exposes the new options under SIEM & scan policy. Documented in docs/nmap.1,
   docs/refguide.xml, docs/nmap.usage.txt, and docs/IDS-EVASION-NMAP-PPRO.md.
 
+o [nmap-ppro] --decoy-stagger: parse with strtol (reject non-decimal tokens, trailing
+  junk, and overflow). --decoy-stagger-random delays are uniform in [1, N] μs via
+  rejection sampling (no modulo bias). Stagger helper is inlined so the usual
+  no-stagger path only pays a few integer compares per decoy.
+
 o [nmap-ppro][Security] mcp-nmap-server: extend safe-mode scan_options policy
   for long --oN/--oG/--oX (same rules as short -o*), --iL, -iR/--iR, --resume,
   --proxies/--proxy, and --sI. Documented in docs/security/
