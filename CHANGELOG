@@ -1,5 +1,13 @@
 #Nmap Changelog ($Id$); -*-text-*-
 
+o [nmap-ppro] Decoy scanning hardening: --decoy-stagger <usec> and
+  --decoy-stagger-random spread -D decoy packets in time (default remains
+  back-to-back) to reduce synchronized bursts against rate-based IDS. IPv4 raw
+  decoy probes now draw a fresh IP ID per decoy. Fixed UDP IPv6 raw decoy
+  probes to use the UDP destination port (not TCP). Zenmap profile editor
+  exposes the new options under SIEM & scan policy. Documented in docs/nmap.1,
+  docs/refguide.xml, docs/nmap.usage.txt, and docs/IDS-EVASION-NMAP-PPRO.md.
+
 o [nmap-ppro][Security] mcp-nmap-server: extend safe-mode scan_options policy
   for long --oN/--oG/--oX (same rules as short -o*), --iL, -iR/--iR, --resume,
   --proxies/--proxy, and --sI. Documented in docs/security/
@@ -63,9 +71,9 @@ o [SIEM] Added optional scan telemetry for analytics and SIEM pipelines:
 
 o [Zenmap][nmap-ppro] The profile editor includes a "SIEM & scan policy" tab
   for --safe-profile, --ipv6-robust, --adaptive-rate, --auto-hostgroup,
-  --siem-log, --siem-syslog, and --siem-tag. zenmapCore/NmapOptions.py parses
-  and renders these options so saved profiles and generated commands stay
-  consistent with the nmap-ppro CLI.
+  --decoy-stagger, --decoy-stagger-random, --siem-log, --siem-syslog, and
+  --siem-tag. zenmapCore/NmapOptions.py parses and renders these options so
+  saved profiles and generated commands stay consistent with the nmap-ppro CLI.
 
 o [MCP][nmap-ppro] Added mcp-nmap-server/: a Python MCP (stdio) server for AI
   agents with tools nmap_version, nmap_help, nmap_dry_run, nmap_run_scan, and

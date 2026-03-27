@@ -3304,15 +3304,53 @@ services.</para>
           detection (<option>-O</option>).  Decoys do not work with
           version detection or TCP connect scan.  When a scan delay is
           in effect, the delay is enforced between each batch of
-          spoofed probes, not between each individual probe. Because
-          decoys are sent as a batch all at once, they may temporarily
-          violate congestion control limits.</para>
+          spoofed probes, not between each individual probe. By default,
+          decoy packets for a given probe are sent back to back; with
+          <option>--decoy-stagger</option>, Nmap waits the given number
+          of microseconds between successive decoy packets in that batch
+          (not after the last), which can reduce synchronized bursts that
+          trigger rate-based IDS rules. Even with stagger, using many
+          decoys may still briefly stress congestion control.</para>
 
           <para>It is worth noting that using too many decoys may
           slow your scan and potentially even make it less
           accurate. Also, some ISPs will filter out your spoofed
           packets, but many do not restrict
           spoofed IP packets at all.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>
+          <option>--decoy-stagger <replaceable>usec</replaceable></option>
+          (Spread decoy packets in time; nmap-ppro)
+          <indexterm><primary><option>--decoy-stagger</option></primary></indexterm>
+        </term>
+        <listitem>
+          <para>When <option>-D</option> is used with more than one decoy,
+          this option inserts a delay of <replaceable>usec</replaceable>
+          microseconds between each decoy packet in a batch. A value of
+          0 (the default) preserves the traditional behavior (all decoys
+          for that probe sent immediately). The maximum allowed value is
+          1,000,000 microseconds (one second). For IPv4 raw decoy probes,
+          each decoy packet uses an independent IP ID, which avoids an
+          artificial correlation between decoys.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>
+          <option>--decoy-stagger-random</option>
+          (Random decoy stagger; nmap-ppro)
+          <indexterm><primary><option>--decoy-stagger-random</option></primary></indexterm>
+        </term>
+        <listitem>
+          <para>When combined with <option>--decoy-stagger</option> and a
+          <replaceable>usec</replaceable> greater than 1, each inter-decoy
+          gap is chosen uniformly at random from the inclusive range 1
+          through <replaceable>usec</replaceable> microseconds. If
+          <option>--decoy-stagger</option> is 0 or unset, this flag has no
+          effect and Nmap may warn at startup.</para>
         </listitem>
       </varlistentry>
 

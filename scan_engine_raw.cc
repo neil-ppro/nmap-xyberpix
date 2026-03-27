@@ -1142,12 +1142,34 @@ static u8 *build_protoscan_packet(const struct sockaddr_storage *src,
   return packet;
 }
 
+/* Optional pause after each decoy packet except the last, to avoid a single
+   synchronized burst that trivially triggers rate-based IDS/IPS signatures. */
+static void decoy_gap_delay(int decoy_index) {
+  unsigned long usec;
+
+  if (o.numdecoys <= 1 || o.decoy_stagger_usec <= 0)
+    return;
+  if (decoy_index + 1 >= o.numdecoys)
+    return;
+  if (o.decoy_stagger_random) {
+    if (o.decoy_stagger_usec <= 1)
+      usec = 1;
+    else
+      usec = 1UL + (get_random_u32() % (unsigned int)o.decoy_stagger_usec);
+  } else {
+    usec = (unsigned long)o.decoy_stagger_usec;
+  }
+  if (usec > 1000000UL)
+    usec = 1000000UL;
+  usleep((useconds_t)usec);
+}
+
 /* The probe sent is returned.
 
-   This function also handles the sending of decoys. There is no fine-grained
-   control of this; all decoys are sent at once on one call of this function.
-   This means that decoys do not honor any scan delay and may violate congestion
-   control limits. */
+   This function also handles the sending of decoys. By default all decoys are
+   sent back-to-back; optional --decoy-stagger inserts delays between packets.
+   Decoys still may not fully honor --scan-delay between the real probe and
+   decoys. */
 UltraProbe *sendIPScanProbe(UltraScanInfo *USI, HostScanStats *hss,
                             const probespec *pspec, tryno_t tryno) {
   u8 *packet = NULL;
@@ -1157,7 +1179,6 @@ UltraProbe *sendIPScanProbe(UltraScanInfo *USI, HostScanStats *hss,
   u32 seq = 0;
   u32 ack = 0;
   u16 sport;
-  u16 ipid = get_random_u16();
   struct eth_nfo eth;
   struct eth_nfo *ethptr = NULL;
   u8 *tcpops = NULL;
@@ -1167,6 +1188,7 @@ UltraProbe *sendIPScanProbe(UltraScanInfo *USI, HostScanStats *hss,
   int chunklen = 0;
   /* Some hosts do not respond to ICMP requests if the identifier is 0. */
   u16 icmp_ident = (get_random_u16() % 0xffff) + 1;
+  u16 ipid;
 
   if (USI->ethsd) {
     ethptr = hss->target->FillEthNfo(&eth, USI->ethsd);
@@ -1199,6 +1221,7 @@ UltraProbe *sendIPScanProbe(UltraScanInfo *USI, HostScanStats *hss,
 
     if (hss->target->af() == AF_INET) {
       for (decoy = 0; decoy < o.numdecoys; decoy++) {
+        ipid = get_random_u16();
         packet = build_tcp_raw(&((struct sockaddr_in *)&o.decoys[decoy])->sin_addr, hss->target->v4hostip(),
                                o.ttl, ipid, IP_TOS_DEFAULT, false,
                                o.ipoptions, o.ipoptionslen,
@@ -1214,6 +1237,7 @@ UltraProbe *sendIPScanProbe(UltraScanInfo *USI, HostScanStats *hss,
         hss->probeSent(packetlen);
         send_ip_packet(USI->rawsd, ethptr, hss->target->TargetSockAddr(), packet, packetlen);
         free(packet);
+        decoy_gap_delay(decoy);
       }
     } else if (hss->target->af() == AF_INET6) {
       for (decoy = 0; decoy < o.numdecoys; decoy++) {
@@ -1230,6 +1254,7 @@ UltraProbe *sendIPScanProbe(UltraScanInfo *USI, HostScanStats *hss,
         hss->probeSent(packetlen);
         send_ip_packet(USI->rawsd, ethptr, hss->target->TargetSockAddr(), packet, packetlen);
         free(packet);
+        decoy_gap_delay(decoy);
       }
     }
   } else if (pspec->type == PS_UDP) {
@@ -1244,6 +1269,7 @@ UltraProbe *sendIPScanProbe(UltraScanInfo *USI, HostScanStats *hss,
 
       if (hss->target->af() == AF_INET) {
         for (decoy = 0; decoy < o.numdecoys; decoy++) {
+          ipid = get_random_u16();
           packet = build_udp_raw(&((struct sockaddr_in *)&o.decoys[decoy])->sin_addr, hss->target->v4hostip(),
                                  o.ttl, ipid, IP_TOS_DEFAULT, false,
                                  o.ipoptions, o.ipoptionslen,
@@ -1257,11 +1283,12 @@ UltraProbe *sendIPScanProbe(UltraScanInfo *USI, HostScanStats *hss,
           hss->probeSent(packetlen);
           send_ip_packet(USI->rawsd, ethptr, hss->target->TargetSockAddr(), packet, packetlen);
           free(packet);
+          decoy_gap_delay(decoy);
         }
       } else if (hss->target->af() == AF_INET6) {
         for (decoy = 0; decoy < o.numdecoys; decoy++) {
           packet = build_udp_raw_ipv6(&((struct sockaddr_in6 *)&o.decoys[decoy])->sin6_addr, hss->target->v6hostip(),
-                                    0, 0, o.ttl, sport, pspec->pd.tcp.dport,
+                                    0, 0, o.ttl, sport, pspec->pd.udp.dport,
                                     (char *) payload, payload_length,
                                     &packetlen);
           if (decoy == o.decoyturn) {
@@ -1271,6 +1298,7 @@ UltraProbe *sendIPScanProbe(UltraScanInfo *USI, HostScanStats *hss,
           hss->probeSent(packetlen);
           send_ip_packet(USI->rawsd, ethptr, hss->target->TargetSockAddr(), packet, packetlen);
           free(packet);
+          decoy_gap_delay(decoy);
         }
       }
     }
@@ -1298,6 +1326,7 @@ UltraProbe *sendIPScanProbe(UltraScanInfo *USI, HostScanStats *hss,
     }
     if (hss->target->af() == AF_INET) {
       for (decoy = 0; decoy < o.numdecoys; decoy++) {
+        ipid = get_random_u16();
         packet = build_sctp_raw(&((struct sockaddr_in *)&o.decoys[decoy])->sin_addr, hss->target->v4hostip(),
                                 o.ttl, ipid, IP_TOS_DEFAULT, false,
                                 o.ipoptions, o.ipoptionslen,
@@ -1312,6 +1341,7 @@ UltraProbe *sendIPScanProbe(UltraScanInfo *USI, HostScanStats *hss,
         hss->probeSent(packetlen);
         send_ip_packet(USI->rawsd, ethptr, hss->target->TargetSockAddr(), packet, packetlen);
         free(packet);
+        decoy_gap_delay(decoy);
       }
     } else if (hss->target->af() == AF_INET6) {
       for (decoy = 0; decoy < o.numdecoys; decoy++) {
@@ -1327,6 +1357,7 @@ UltraProbe *sendIPScanProbe(UltraScanInfo *USI, HostScanStats *hss,
         hss->probeSent(packetlen);
         send_ip_packet(USI->rawsd, ethptr, hss->target->TargetSockAddr(), packet, packetlen);
         free(packet);
+        decoy_gap_delay(decoy);
       }
     }
     free(chunk);
@@ -1350,6 +1381,7 @@ UltraProbe *sendIPScanProbe(UltraScanInfo *USI, HostScanStats *hss,
         hss->probeSent(packetlen);
         send_ip_packet(USI->rawsd, ethptr, hss->target->TargetSockAddr(), packet, packetlen);
         free(packet);
+        decoy_gap_delay(decoy);
       }
     } else if (hss->target->af() == AF_INET6) {
       struct sockaddr_storage ss;
@@ -1370,10 +1402,12 @@ UltraProbe *sendIPScanProbe(UltraScanInfo *USI, HostScanStats *hss,
         hss->probeSent(packetlen);
         send_ip_packet(USI->rawsd, ethptr, hss->target->TargetSockAddr(), packet, packetlen);
         free(packet);
+        decoy_gap_delay(decoy);
       }
     }
   } else if (pspec->type == PS_ICMP) {
     for (decoy = 0; decoy < o.numdecoys; decoy++) {
+      ipid = get_random_u16();
       packet = build_icmp_raw(&((struct sockaddr_in *)&o.decoys[decoy])->sin_addr, hss->target->v4hostip(),
                               o.ttl, ipid, IP_TOS_DEFAULT, false,
                               o.ipoptions, o.ipoptionslen,
@@ -1387,6 +1421,7 @@ UltraProbe *sendIPScanProbe(UltraScanInfo *USI, HostScanStats *hss,
       hss->probeSent(packetlen);
       send_ip_packet(USI->rawsd, ethptr, hss->target->TargetSockAddr(), packet, packetlen);
       free(packet);
+      decoy_gap_delay(decoy);
     }
   } else if (pspec->type == PS_ICMPV6) {
     for (decoy =0; decoy < o.numdecoys; decoy++) {
@@ -1402,6 +1437,7 @@ UltraProbe *sendIPScanProbe(UltraScanInfo *USI, HostScanStats *hss,
       hss->probeSent(packetlen);
       send_ip_packet(USI->rawsd, ethptr, hss->target->TargetSockAddr(), packet, packetlen);
       free(packet);
+      decoy_gap_delay(decoy);
     }
   } else assert(0);
 

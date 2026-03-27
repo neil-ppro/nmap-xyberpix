@@ -301,6 +301,8 @@ static void printusage() {
          "  --ipv6-robust: Longer IPv6 RTT/retry defaults (use with -6)\n"
          "  --adaptive-rate: Slow scans when ICMP administratively prohibited is seen\n"
          "  --auto-hostgroup: Tune parallel host batch size from timing and port count\n"
+         "  --decoy-stagger <usec>: Wait usec between decoy packets (0=off; IDS burst evasion)\n"
+         "  --decoy-stagger-random: Each gap uniform random in [1,usec] (needs --decoy-stagger)\n"
          "  --resume <filename>: Resume an aborted scan\n"
          "  --noninteractive: Disable runtime interactions via keyboard\n"
          "  --stylesheet <path/URL>: XSL stylesheet to transform XML output to HTML\n"
@@ -650,6 +652,8 @@ void parse_options(int argc, char **argv) {
     {"ipv6-robust", no_argument, 0, 0},
     {"adaptive-rate", no_argument, 0, 0},
     {"auto-hostgroup", no_argument, 0, 0},
+    {"decoy-stagger", required_argument, 0, 0},
+    {"decoy-stagger-random", no_argument, 0, 0},
     {0, 0, 0, 0}
   };
 
@@ -947,6 +951,12 @@ void parse_options(int argc, char **argv) {
           o.adaptive_rate = true;
         } else if (strcmp(long_options[option_index].name, "auto-hostgroup") == 0) {
           o.auto_hostgroup = true;
+        } else if (strcmp(long_options[option_index].name, "decoy-stagger") == 0) {
+          o.decoy_stagger_usec = atoi(optarg);
+          if (o.decoy_stagger_usec < 0 || o.decoy_stagger_usec > 1000000)
+            fatal("--decoy-stagger must be between 0 and 1000000 microseconds.");
+        } else if (strcmp(long_options[option_index].name, "decoy-stagger-random") == 0) {
+          o.decoy_stagger_random = true;
         } else if (strcmp(long_options[option_index].name, "oA") == 0) {
           char buf[MAXPATHLEN];
           test_file_name(optarg, long_options[option_index].name);

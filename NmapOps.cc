@@ -306,6 +306,8 @@ void NmapOps::Initialize() {
   adaptive_rate = false;
   auto_hostgroup = false;
   ipv6_robust = false;
+  decoy_stagger_usec = 0;
+  decoy_stagger_random = false;
   dns_servers = NULL;
   implicitARPPing = true;
   numhosts_scanned = 0;
@@ -404,6 +406,10 @@ administrator privileges.";
 
  if (numdecoys > 1 && idlescan) {
     error("WARNING: Your decoys won't be used in the Idlescan portion of your scanning (although all packets sent to the target are spoofed anyway");
+  }
+
+  if (decoy_stagger_random && decoy_stagger_usec <= 0) {
+    error("WARNING: --decoy-stagger-random has no effect without --decoy-stagger > 0.");
   }
 
  if (connectscan && spoofsource) {

@@ -290,6 +290,9 @@ class NmapOps {
   bool adaptive_rate;  /* --adaptive-rate */
   bool auto_hostgroup;  /* --auto-hostgroup */
   bool ipv6_robust;     /* --ipv6-robust */
+  /* nmap-ppro: spread -D decoy sends in time; optional uniform jitter in [1,usec] */
+  int decoy_stagger_usec;
+  bool decoy_stagger_random;
   char *dns_servers;
 
   /* Do IPv4 ARP or IPv6 ND scan of directly connected Ethernet hosts, even if

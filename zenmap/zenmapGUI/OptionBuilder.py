@@ -86,7 +86,7 @@ def get_option_check_auxiliary_widget(option, ops, check):
             "--initial-rtt-timeout", "--max-hostgroup", "--min-hostgroup",
             "--max-parallelism", "--min-parallelism", "--max-scan-delay",
             "--scan-delay", "-PA", "-PS", "-PU", "-PO", "-PY",
-            "--siem-log", "--siem-tag"):
+            "--siem-log", "--siem-tag", "--decoy-stagger"):
         return OptionEntry(option, ops, check)
     elif option in ("-d", "-v"):
         return OptionLevel(option, ops, check)
@@ -95,7 +95,7 @@ def get_option_check_auxiliary_widget(option, ops, check):
     elif option in ("-A", "-O", "-sV", "-n", "-6", "-Pn", "-PE", "-PP", "-PM",
             "-PB", "-sC", "--script-trace", "-F", "-f", "--packet-trace", "-r",
             "--traceroute", "--safe-profile", "--ipv6-robust", "--adaptive-rate",
-            "--auto-hostgroup", "--siem-syslog"):
+            "--auto-hostgroup", "--siem-syslog", "--decoy-stagger-random"):
         return None
     elif option in ("",):
         return OptionExtras(option, ops, check)

@@ -72,6 +72,8 @@ TIMING AND PERFORMANCE:
 FIREWALL/IDS EVASION AND SPOOFING:
   -f; --mtu <val>: fragment packets (optionally w/given MTU)
   -D <decoy1,decoy2[,ME],...>: Cloak a scan with decoys
+  --decoy-stagger <usec>: Wait usec between decoy packets (0=off; nmap-ppro)
+  --decoy-stagger-random: Random stagger gaps in [1,usec] (nmap-ppro)
   -S <IP_Address>: Spoof source address
   -e <iface>: Use specified interface
   -g/--source-port <portnum>: Use given port number

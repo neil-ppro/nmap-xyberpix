@@ -193,6 +193,8 @@ TIMING AND PERFORMANCE:
 FIREWALL/IDS EVASION AND SPOOFING:
   \-f; \-\-mtu <val>: fragment packets (optionally w/given MTU)
   \-D <decoy1,decoy2[,ME],\&.\&.\&.>: Cloak a scan with decoys
+  \-\-decoy\-stagger <usec>: Wait usec between decoy packets (0=off; nmap\-ppro)
+  \-\-decoy\-stagger\-random: Random stagger gaps in [1,usec] (nmap\-ppro)
   \-S <IP_Address>: Spoof source address
   \-e <iface>: Use specified interface
   \-g/\-\-source\-port <portnum>: Use given port number
@@ -1789,9 +1791,19 @@ addresses\&.
 .sp
 Note that the hosts you use as decoys should be up or you might accidentally SYN flood your targets\&. Also it will be pretty easy to determine which host is scanning if only one is actually up on the network\&. You might want to use IP addresses instead of names (so the decoy networks don\*(Aqt see you in their nameserver logs)\&. Right now random IP address generation is only supported with IPv4
 .sp
-Decoys are used both in the initial host discovery scan (using ICMP, SYN, ACK, or whatever) and during the actual port scanning phase\&. Decoys are also used during remote OS detection (\fB\-O\fR)\&. Decoys do not work with version detection or TCP connect scan\&. When a scan delay is in effect, the delay is enforced between each batch of spoofed probes, not between each individual probe\&. Because decoys are sent as a batch all at once, they may temporarily violate congestion control limits\&.
+Decoys are used both in the initial host discovery scan (using ICMP, SYN, ACK, or whatever) and during the actual port scanning phase\&. Decoys are also used during remote OS detection (\fB\-O\fR)\&. Decoys do not work with version detection or TCP connect scan\&. When a scan delay is in effect, the delay is enforced between each batch of spoofed probes, not between each individual probe\&. By default, decoy packets for a given probe are sent back to back; with \fB\-\-decoy\-stagger\fR, Nmap waits the given number of microseconds between successive decoy packets in that batch (not after the last), which can reduce synchronized bursts that trigger rate\-based IDS rules\&. Even with stagger, using many decoys may still briefly stress congestion control\&.
 .sp
 It is worth noting that using too many decoys may slow your scan and potentially even make it less accurate\&. Also, some ISPs will filter out your spoofed packets, but many do not restrict spoofed IP packets at all\&.
+.RE
+.PP
+\fB\-\-decoy\-stagger \fR\fB\fIusec\fR\fR (Spread decoy packets in time; nmap\-ppro)
+.RS 4
+When \fB\-D\fR is used with more than one decoy, this option inserts a delay of \fIusec\fR microseconds between each decoy packet in a batch\&. A value of 0 (the default) preserves the traditional behavior (all decoys for that probe sent immediately)\&. The maximum allowed value is 1,000,000 microseconds (one second)\&. For IPv4 raw decoy probes, each decoy packet uses an independent IP ID, which avoids an artificial correlation between decoys\&.
+.RE
+.PP
+\fB\-\-decoy\-stagger\-random\fR (Random decoy stagger; nmap\-ppro)
+.RS 4
+When combined with \fB\-\-decoy\-stagger\fR and a \fIusec\fR greater than 1, each inter\-decoy gap is chosen uniformly at random from the inclusive range 1 through \fIusec\fR microseconds\&. If \fB\-\-decoy\-stagger\fR is 0 or unset, this flag has no effect and Nmap may warn at startup\&.
 .RE
 .PP
 \fB\-S \fR\fB\fIIP_Address\fR\fR (Spoof source address)
