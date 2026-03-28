@@ -1,5 +1,15 @@
 #Nmap Changelog ($Id$); -*-text-*-
 
+o [nmap-ppro] Nping: optional authorized HTTP load/resilience mode --http-stress
+  (parallel cleartext HTTP/1.1 over TCP via nsock), gated by --authorized-dos or
+  NPING_DOS_AUTHORIZED=1, with --http-path, --http-method, --http-body,
+  --stress-parallel, --stress-duration, and -c/--count; default destination port
+  80; documented in nping usage text and nping(1). High-volume TCP connect
+  testing remains available via --tcp-connect with timing options. HTTP stress
+  skips nsock pre-connect bind unless a source port or source IP is set, and uses
+  correct sockaddr lengths when binding, avoiding connect failures on macOS and
+  similar stacks.
+
 o [nmap-ppro] New options --ssh-bounce user@host and --ssh-bounce-port P: fork
   OpenSSH (-N -D on loopback) and set the SOCKS4 proxy chain used for version
   detection and NSE (same nsock scope/limitations as --proxies). Mutually

@@ -62,6 +62,7 @@
 
 #include "nping.h"
 #include "ProbeMode.h"
+#include "HttpStress.h"
 #include <vector>
 #include "nsock.h"
 #include "output.h"
@@ -120,7 +121,9 @@ int ProbeMode::init_nsock(){
 /** Cleans up the internal nsock pool and any other internal data that
   * needs to be taken care of before destroying the object. */
 int ProbeMode::cleanup(){
-  nsock_pool_delete(this->nsp);
+  if (this->nsock_init)
+    nsock_pool_delete(this->nsp);
+  this->nsock_init=false;
   return OP_SUCCESS;
 } /* End of cleanup() */
 
@@ -181,6 +184,11 @@ int ProbeMode::start(){
   memset(pkt, 0, MAX_IP_PACKET_LEN);
   memset(&pcap_nsi, 0, sizeof(pcap_nsi));
   memset(pkts2send, 0, MX_PKT * sizeof(sendpkt_t));
+
+  if (o.getMode() == HTTP_STRESS) {
+    HttpStress hs;
+    return hs.start();
+  }
 
   /* Get array of target ports */
   targetPorts = o.getTargetPorts( &numTargetPorts );

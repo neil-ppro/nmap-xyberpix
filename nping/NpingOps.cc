@@ -315,6 +315,17 @@ NpingOps::NpingOps() {
     delayed_rcvd_str=NULL;
     delayed_rcvd_str_set=false;
 
+    dos_authorized=false;
+    stress_http_path=strdup("/");
+    stress_http_method=strdup("GET");
+    stress_http_body=NULL;
+    stress_http_body_set=false;
+    stress_parallel=32;
+    stress_parallel_set=false;
+    stress_duration_sec=0;
+    stress_duration_set=false;
+    pcount_user_supplied=false;
+
 } /* End of NpingOps() */
 
 
@@ -328,6 +339,12 @@ NpingOps::~NpingOps() {
     free(target_ports);
  if (delayed_rcvd_str_set)
    free(delayed_rcvd_str);
+ if (stress_http_path!=NULL)
+   free(stress_http_path);
+ if (stress_http_method!=NULL)
+   free(stress_http_method);
+ if (stress_http_body!=NULL)
+   free(stress_http_body);
  return;
 } /* End of ~NpingOps() */
 
@@ -341,7 +358,7 @@ NpingOps::~NpingOps() {
  *  @return OP_SUCCESS on success.
  *  @return OP_FAILURE in case of error. */
 int NpingOps::setMode(int md) {
-  if ( md!=TCP_CONNECT && md!=TCP && md!=UDP && md!=UDP_UNPRIV && md!=ICMP && md!=ARP )
+  if ( md!=TCP_CONNECT && md!=TCP && md!=UDP && md!=UDP_UNPRIV && md!=ICMP && md!=ARP && md!=HTTP_STRESS )
     return OP_FAILURE;
   else{
     this->mode=md;
@@ -396,6 +413,10 @@ char * NpingOps::mode2Ascii(int md) {
 
     case ARP:
         sprintf(buff, "ARP");
+    break;
+
+    case HTTP_STRESS:
+        sprintf(buff, "HTTP-Stress");
     break;
 
     default:
@@ -612,6 +633,16 @@ u32 NpingOps::getPacketCount(){
 bool NpingOps::issetPacketCount(){
   return this->pcount_set;
 } /* End of issetPacketCount() */
+
+
+void NpingOps::markPacketCountUserSupplied(){
+  this->pcount_user_supplied=true;
+}
+
+
+bool NpingOps::isPacketCountUserSupplied(){
+  return this->pcount_user_supplied;
+}
 
 
 /** Sets attribute sendpref which defines user's preference for packet
@@ -1441,7 +1472,7 @@ bool NpingOps::issetTargetPorts(){
 
 /*Returns true if the scan type can use the -p option*/
 bool NpingOps::scan_mode_uses_target_ports(int mode){
-    return (mode==TCP_CONNECT || mode==TCP || mode == UDP || mode == UDP_UNPRIV);
+    return (mode==TCP_CONNECT || mode==TCP || mode == UDP || mode == UDP_UNPRIV || mode==HTTP_STRESS);
 } /*End of scan_mode_uses_target_ports*/
 
 /** Sets TCP/UPD source port. Supplied parameter must be an integer >=0 &&
@@ -2219,6 +2250,106 @@ bool NpingOps::once(){
 } /* End of once() */
 
 
+void NpingOps::setDosAuthorized(bool v){
+  this->dos_authorized=v;
+}
+
+
+bool NpingOps::isDosAuthorized(){
+  return this->dos_authorized;
+}
+
+
+int NpingOps::setStressHttpPath(const char *p){
+  if(p==NULL || p[0]!='/')
+    return OP_FAILURE;
+  if(this->stress_http_path!=NULL)
+    free(this->stress_http_path);
+  this->stress_http_path=strdup(p);
+  return this->stress_http_path!=NULL ? OP_SUCCESS : OP_FAILURE;
+}
+
+
+const char *NpingOps::getStressHttpPath(){
+  return this->stress_http_path!=NULL ? this->stress_http_path : "/";
+}
+
+
+int NpingOps::setStressHttpMethod(const char *m){
+  if(m==NULL || m[0]=='\0')
+    return OP_FAILURE;
+  if(this->stress_http_method!=NULL)
+    free(this->stress_http_method);
+  this->stress_http_method=strdup(m);
+  return this->stress_http_method!=NULL ? OP_SUCCESS : OP_FAILURE;
+}
+
+
+const char *NpingOps::getStressHttpMethod(){
+  return this->stress_http_method!=NULL ? this->stress_http_method : "GET";
+}
+
+
+int NpingOps::setStressHttpBody(const char *b){
+  if(this->stress_http_body!=NULL){
+    free(this->stress_http_body);
+    this->stress_http_body=NULL;
+  }
+  this->stress_http_body_set=false;
+  if(b==NULL || b[0]=='\0')
+    return OP_SUCCESS;
+  this->stress_http_body=strdup(b);
+  if(this->stress_http_body==NULL)
+    return OP_FAILURE;
+  this->stress_http_body_set=true;
+  return OP_SUCCESS;
+}
+
+
+const char *NpingOps::getStressHttpBody(){
+  return this->stress_http_body;
+}
+
+
+bool NpingOps::issetStressHttpBody(){
+  return this->stress_http_body_set;
+}
+
+
+int NpingOps::setStressParallel(u32 n){
+  this->stress_parallel=n;
+  this->stress_parallel_set=true;
+  return OP_SUCCESS;
+}
+
+
+u32 NpingOps::getStressParallel(){
+  return this->stress_parallel;
+}
+
+
+bool NpingOps::issetStressParallel(){
+  return this->stress_parallel_set;
+}
+
+
+int NpingOps::setStressDurationSec(u32 sec){
+  this->stress_duration_sec=sec;
+  this->stress_duration_set=true;
+  return OP_SUCCESS;
+}
+
+
+u32 NpingOps::getStressDurationSec(){
+  return this->stress_duration_sec;
+}
+
+
+bool NpingOps::issetStressDurationSec(){
+  return this->stress_duration_set;
+}
+
+
 /******************************************************************************
  *  Option Validation                                                         *
  ******************************************************************************/
@@ -2235,14 +2366,6 @@ be started by an administrator before Npcap can be used. Running nping.exe\n\
 will open a UAC dialog where you can start the service if you have\n\
 administrator privileges.";
 #endif
-
-if (this->havePcap()==false){
-    #ifdef WIN32
-        nping_fatal(QT_3, "Nping requires %s", privreq);
-    #else
-        nping_fatal(QT_3, "Nping requires libpcap to be installed on your system.");
-    #endif
-}
 
 
 /** ROLE SELECTION ***********************************************************/
@@ -2280,6 +2403,16 @@ if (this->havePcap()==false){
         this->setMode(TCP_CONNECT);
   }
 
+/** LIBPCAP ******************************************************************/
+  /* HTTP stress uses nsock TCP only; libpcap is not required. */
+  if (this->havePcap()==false && this->getMode()!=HTTP_STRESS){
+    #ifdef WIN32
+        nping_fatal(QT_3, "Nping requires %s", privreq);
+    #else
+        nping_fatal(QT_3, "Nping requires libpcap to be installed on your system.");
+    #endif
+  }
+
 /** PACKET COUNT / ROUNDS ****************************************************/
   if( !this->issetPacketCount() ){
       /* If --traceroute is set, the packet count is higher */
@@ -2288,6 +2421,10 @@ if (this->havePcap()==false){
       else
           this->setPacketCount( DEFAULT_PACKET_COUNT );
   }
+
+  /* Duration-only HTTP stress: do not stop when default probe count is exhausted */
+  if (this->getMode()==HTTP_STRESS && this->issetStressDurationSec() && !this->isPacketCountUserSupplied())
+    this->setPacketCount(0);
 
 
   if( !this->issetDelay() )
@@ -2306,7 +2443,7 @@ if (this->havePcap()==false){
     nping_fatal(QT_3,"Echo mode requires %s.", privreq);
 
 /** CHECK PRIVILEGES FOR CURRENT MODE ****************************************/
-  if( !this->isRoot() && this->getMode()!=UDP_UNPRIV && this->getMode()!=TCP_CONNECT )
+  if( !this->isRoot() && this->getMode()!=UDP_UNPRIV && this->getMode()!=TCP_CONNECT && this->getMode()!=HTTP_STRESS )
     nping_fatal(QT_3,"Mode %s requires %s.", this->mode2Ascii( this->getMode() ), privreq);
 
 
@@ -2324,6 +2461,24 @@ if (this->havePcap()==false){
         nping_print(VB_0, "Warning: Payload supplied in TCP Connect mode. Payload will be ignored.");
   }
 
+/** HTTP STRESS (authorized load / resilience testing) **********************/
+  if(this->getMode()==HTTP_STRESS) {
+      if(!this->isDosAuthorized())
+        nping_fatal(QT_3, "HTTP stress mode requires explicit authorization: use --authorized-dos or set environment variable NPING_DOS_AUTHORIZED=1. Only use against systems you own or have permission to test.");
+      if(this->getRole()!=ROLE_NORMAL)
+        nping_fatal(QT_3, "HTTP stress mode cannot be used with echo client or echo server.");
+      if(this->getTraceroute())
+        nping_fatal(QT_3, "Traceroute is not supported in HTTP stress mode.");
+      if(this->issetStressParallel() && this->getStressParallel()<1)
+        nping_fatal(QT_3, "--stress-parallel must be at least 1.");
+      if(this->getStressParallel()>4096)
+        nping_fatal(QT_3, "--stress-parallel must be at most 4096.");
+      if(this->issetStressDurationSec() && this->getStressDurationSec()>86400)
+        nping_fatal(QT_3, "--stress-duration must be at most 86400 seconds (24 hours).");
+      if(this->issetPayloadBuffer())
+        nping_print(VB_0, "Warning: Payload supplied in HTTP stress mode. Use --http-body for request bodies; packet payload is ignored.");
+  }
+
 /** SOURCE IP, SOURCE MAC and NETWORK DEVICE *********************************/
 /* If we are in a mode where we need to craft IP packets, then we need to
  * obtain a network interface name and a source IP address. There are three
@@ -2336,7 +2491,7 @@ if (this->havePcap()==false){
  * interface and source IP without user intervention, so we try in many ways
  * until either we succeed or we run out of possibilities and fatal().
  */
-if( this->getMode()!=TCP_CONNECT && this->getMode()!=UDP_UNPRIV && this->getRole()!=ROLE_SERVER){
+if( this->getMode()!=TCP_CONNECT && this->getMode()!=UDP_UNPRIV && this->getMode()!=HTTP_STRESS && this->getRole()!=ROLE_SERVER){
 
     char devbuff[32];
     char *dev;
@@ -2509,7 +2664,7 @@ if(this->getRole()!=ROLE_SERVER){
         this->setSendEth(false);
     }
  }
- if( this->getMode()==TCP_CONNECT || this->getMode()==UDP_UNPRIV )
+ if( this->getMode()==TCP_CONNECT || this->getMode()==UDP_UNPRIV || this->getMode()==HTTP_STRESS )
     nping_print(DBG_2,"Nping will send packets in unprivileged mode using regular system calls");
  else
     nping_print(DBG_2,"Nping will send packets at %s",  this->sendEth() ? "raw ethernet level" : "raw IP level" );
@@ -2562,6 +2717,8 @@ if(this->getRole()!=ROLE_SERVER){
 /** MISCELLANEOUS ************************************************************/
 if( this->issetSourcePort() && this->getMode()==TCP_CONNECT && this->getPacketCount()>1 )
     error("Warning: Setting a source port in TCP-Connect mode with %d rounds may not work after the first round. You may want to do just one round (use --count 1).", this->getPacketCount() );
+if( this->issetSourcePort() && this->getMode()==HTTP_STRESS )
+    error("Warning: A fixed source port may limit parallel HTTP stress connections; omit -g unless you need it." );
 } /* End of validateOptions() */
 
 
@@ -2679,7 +2836,7 @@ void NpingOps::displayStatistics(){
           nping_print(QT_1|NO_NEWLINE,"| Not Matched: %I64u ", this->stats.getUnmatchedPackets() );
           nping_print(QT_1|NO_NEWLINE,"(%s) ", format_bytecount(this->stats.getRecvBytes()-this->stats.getEchoedBytes(), auxbuff, 256));
           nping_print(QT_1,"(%.2lf%%)", this->stats.getUnmatchedPacketPercentage100() );
-      }else if(this->getMode()==TCP_CONNECT){
+      }else if(this->getMode()==TCP_CONNECT || this->getMode()==HTTP_STRESS){
           nping_print(QT_1|NO_NEWLINE, "TCP connection attempts: %I64u ", this->stats.getSentPackets() );
           nping_print(QT_1|NO_NEWLINE,"| Successful connections: %I64u ", this->stats.getRecvPackets() );
           nping_print(QT_1|NO_NEWLINE,"| Failed: %I64u ", this->stats.getLostPackets() );
@@ -2716,7 +2873,7 @@ void NpingOps::displayStatistics(){
           nping_print(QT_1|NO_NEWLINE,"| Not Matched: %llu ", this->stats.getUnmatchedPackets() );
           nping_print(QT_1|NO_NEWLINE,"(%s) ", format_bytecount(this->stats.getRecvBytes()-this->stats.getEchoedBytes(), auxbuff, 256));
           nping_print(QT_1,"(%.2lf%%)", this->stats.getUnmatchedPacketPercentage100() );
-      }else if(this->getMode()==TCP_CONNECT){
+      }else if(this->getMode()==TCP_CONNECT || this->getMode()==HTTP_STRESS){
           nping_print(QT_1|NO_NEWLINE, "TCP connection attempts: %llu ", this->stats.getSentPackets() );
           nping_print(QT_1|NO_NEWLINE,"| Successful connections: %llu ", this->stats.getRecvPackets() );
           nping_print(QT_1|NO_NEWLINE,"| Failed: %llu ", this->stats.getLostPackets() );
@@ -2957,6 +3114,15 @@ int NpingOps::setDefaultHeaderValues(){
             list[0]=DEFAULT_TCP_TARGET_PORT;
             this->setTargetPorts(list, 1);
         }
+    break;
+
+    case HTTP_STRESS:
+        if( !this->issetTargetPorts() ) {
+            u16 *list = (u16 *)safe_zalloc( sizeof(u16) );
+            list[0]=80;
+            this->setTargetPorts(list, 1);
+        }
+    break;
 
     default:
         return OP_FAILURE;

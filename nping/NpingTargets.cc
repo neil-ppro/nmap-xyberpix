@@ -239,7 +239,7 @@ int NpingTargets::processSpecs(){
 
       /* Get all the information needed to send packets to this target.
 	   * (Only in case we are not in unprivileged modes) */
-		if(o.getMode()!=TCP_CONNECT && o.getMode()!=UDP_UNPRIV){
+		if(o.getMode()!=TCP_CONNECT && o.getMode()!=UDP_UNPRIV && o.getMode()!=HTTP_STRESS){
 		  result=route_dst( &ss, &rnfo, o.getDevice(), NULL );
 		  if(result==false){
 			nping_warning(QT_2, "Failed to determine route to host %s. Skipping it...", mytarget->getTargetIPstr() );

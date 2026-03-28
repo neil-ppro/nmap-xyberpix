@@ -110,6 +110,13 @@ int ArgParser::parseArguments(int argc, char *argv[]) {
   {"udp", no_argument, 0, 0},
   {"icmp", no_argument, 0, 0},
   {"arp", no_argument, 0, 0},
+  {"http-stress", no_argument, 0, 0},
+  {"authorized-dos", no_argument, 0, 0},
+  {"http-path", required_argument, 0, 0},
+  {"http-method", required_argument, 0, 0},
+  {"http-body", required_argument, 0, 0},
+  {"stress-parallel", required_argument, 0, 0},
+  {"stress-duration", required_argument, 0, 0},
   {"tr", no_argument, 0, 0},
   {"traceroute", no_argument, 0, 0},
 
@@ -288,6 +295,13 @@ int ArgParser::parseArguments(int argc, char *argv[]) {
             nping_fatal(QT_3,"Cannot specify more than one probe mode. Choose either %s or %s.",
                    strdup( o.mode2Ascii(ARP) ),  strdup( o.mode2Ascii(o.getMode()) ) );
         o.setMode(ARP);
+    } else if (strcmp(long_options[option_index].name, "http-stress") == 0) {
+        if( o.issetMode() && o.getMode()!=HTTP_STRESS)
+            nping_fatal(QT_3,"Cannot specify more than one probe mode. Choose either %s or %s.",
+                   strdup( o.mode2Ascii(HTTP_STRESS) ),  strdup( o.mode2Ascii(o.getMode()) ) );
+        o.setMode(HTTP_STRESS);
+    } else if (strcmp(long_options[option_index].name, "authorized-dos") == 0) {
+        o.setDosAuthorized(true);
     } else if (strcmp(long_options[option_index].name, "traceroute") == 0 ||
                strcmp(long_options[option_index].name, "tr") == 0) {
         o.enableTraceroute();
@@ -882,6 +896,25 @@ int ArgParser::parseArguments(int argc, char *argv[]) {
             nping_fatal(QT_3,"Invalid rate supplied. Rate must be a valid, positive integer");
         }
 
+/* HTTP STRESS OPTIONS ********************************************************/
+    } else if (strcmp(long_options[option_index].name, "http-path") == 0 ){
+        if (o.setStressHttpPath(optarg) != OP_SUCCESS)
+            nping_fatal(QT_3, "--http-path must be an absolute path starting with /.");
+    } else if (strcmp(long_options[option_index].name, "http-method") == 0 ){
+        if (o.setStressHttpMethod(optarg) != OP_SUCCESS)
+            nping_fatal(QT_3, "Invalid --http-method.");
+    } else if (strcmp(long_options[option_index].name, "http-body") == 0 ){
+        if (o.setStressHttpBody(optarg) != OP_SUCCESS)
+            nping_fatal(QT_3, "Invalid --http-body.");
+    } else if (strcmp(long_options[option_index].name, "stress-parallel") == 0 ){
+        if (parse_u32(optarg, &aux32) != OP_SUCCESS || aux32<1)
+            nping_fatal(QT_3, "--stress-parallel must be a positive integer.");
+        o.setStressParallel(aux32);
+    } else if (strcmp(long_options[option_index].name, "stress-duration") == 0 ){
+        if (parse_u32(optarg, &aux32) != OP_SUCCESS || aux32<1)
+            nping_fatal(QT_3, "--stress-duration must be a positive integer (seconds).");
+        o.setStressDurationSec(aux32);
+
 /* MISC OPTIONS **************************************************************/
     } else if (strcmp(long_options[option_index].name, "privileged") == 0 ){
         o.setIsRoot();
@@ -1006,6 +1039,7 @@ int ArgParser::parseArguments(int argc, char *argv[]) {
         }else{
             nping_fatal(QT_3,"Packet count must be an integer greater than or equal to 0.");
         }
+        o.markPacketCountUserSupplied();
     break; /* case 'c': */
 
     case 'e': /* Network interface */
@@ -1108,6 +1142,11 @@ int ArgParser::parseArguments(int argc, char *argv[]) {
  if (script_kiddie != NULL && strcmp(script_kiddie, "0") != 0)
      o.setRF();
 
+ { const char *da = getenv("NPING_DOS_AUTHORIZED");
+   if (da != NULL && strcmp(da, "1") == 0)
+     o.setDosAuthorized(true);
+ }
+
  /* Now it's time to parse target host specifications. As nmap does, Nping
   * treats everything getopt() can't parse as a host specification. At this
   * point, var optind should point to the argv[] position that contains the
@@ -1151,8 +1190,16 @@ void ArgParser::printUsage(void){
 "  --udp                            : UDP probe mode.\n"
 "  --icmp                           : ICMP probe mode.\n"
 "  --arp                            : ARP/RARP probe mode.\n"
+"  --http-stress                    : Parallel HTTP/1.1 over TCP (requires --authorized-dos).\n"
 "  --tr, --traceroute               : Traceroute mode (can only be used with \n"
 "                                     TCP/UDP/ICMP modes).\n"
+"AUTHORIZED HTTP LOAD TESTING (--http-stress):\n"
+"  --authorized-dos                 : Required gate; also NPING_DOS_AUTHORIZED=1.\n"
+"  --http-path <path>               : Absolute path (default /).\n"
+"  --http-method <method>           : Default GET.\n"
+"  --http-body <string>             : Optional body (Content-Length set).\n"
+"  --stress-parallel <n>            : Concurrent connections (1-4096, default 32).\n"
+"  --stress-duration <sec>          : Time limit; without -c, no connection count limit.\n"
 "TCP CONNECT MODE:\n"
 "   -p, --dest-port <port spec>     : Set destination port(s).\n"
 "   -g, --source-port <portnumber>  : Try to use a custom source port.\n"

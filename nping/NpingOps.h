@@ -69,6 +69,7 @@
 #define UDP_UNPRIV    0xF4
 #define ICMP          0xF5
 #define ARP           0xF6
+#define HTTP_STRESS   0xF7
 
 /* Roles */
 #define ROLE_NORMAL 0x22
@@ -285,6 +286,18 @@ class NpingOps {
     bool delayed_rcvd_str_set; /* Do we have a delayed RCVD string?    */
     nsock_event_id delayed_rcvd_event; /* Nsock event for delayed RCVD */
 
+    /* Authorized HTTP load / resilience testing (HTTP_STRESS) */
+    bool dos_authorized;
+    char *stress_http_path;
+    char *stress_http_method;
+    char *stress_http_body;
+    bool stress_http_body_set;
+    u32 stress_parallel;
+    bool stress_parallel_set;
+    u32 stress_duration_sec;
+    bool stress_duration_set;
+    bool pcount_user_supplied;
+
   public:
     NpingTargets targets;
     NpingStats stats;                      /* Global statistics           */
@@ -334,6 +347,8 @@ class NpingOps {
     int setPacketCount(u32 val);
     u32 getPacketCount();
     bool issetPacketCount();
+    void markPacketCountUserSupplied();
+    bool isPacketCountUserSupplied();
 
     int setSendPreference(int v);
     int getSendPreference();
@@ -617,6 +632,23 @@ class NpingOps {
 
     int setOnce(bool val);
     bool once();
+
+    /* Authorized HTTP stress (cleartext HTTP/1.1 over TCP; HTTP_STRESS mode) */
+    void setDosAuthorized(bool v);
+    bool isDosAuthorized();
+    int setStressHttpPath(const char *p);
+    const char *getStressHttpPath();
+    int setStressHttpMethod(const char *m);
+    const char *getStressHttpMethod();
+    int setStressHttpBody(const char *b);
+    const char *getStressHttpBody();
+    bool issetStressHttpBody();
+    int setStressParallel(u32 n);
+    u32 getStressParallel();
+    bool issetStressParallel();
+    int setStressDurationSec(u32 sec);
+    u32 getStressDurationSec();
+    bool issetStressDurationSec();
 
     /* Validation */
     void validateOptions();
