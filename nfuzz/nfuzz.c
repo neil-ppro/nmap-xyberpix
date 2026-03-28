@@ -18,6 +18,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdint.h>
@@ -31,6 +32,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 
 #ifndef IPPROTO_IP
 #define IPPROTO_IP 0
@@ -55,6 +57,19 @@
 #define NFUZZ_HTTP_REQ_MAX 8192
 #define NFUZZ_HTTP_DEFAULT_BIND "127.0.0.1:8787"
 #define NFUZZ_HTTP_DEFAULT_REFRESH 2
+#define NFUZZ_BROWSER_MAX_EXTRA 32
+#define NFUZZ_BROWSER_CMD_MAX 512
+#define NFUZZ_BROWSER_URL_MAX 768
+
+struct nfuzz_http_browser_opts {
+  int auto_browser;
+  const char *browser_cmd;
+  int browser_preset; /* 0=chromium 1=firefox 2=none */
+  unsigned browser_restart_sec;
+  const char *browser_url_override;
+  char **browser_extra;
+  int browser_extra_n;
+};
 
 static int parse_inaddr(const char *s, struct in_addr *out);
 static uint32_t now_ns(void);
@@ -364,9 +379,161 @@ static int parse_bind(const char *bind, char *host_out, size_t host_sz,
   return 0;
 }
 
+static volatile sig_atomic_t nfuzz_http_stop;
+
+static void nfuzz_http_sig(int s)
+{
+  (void)s;
+  nfuzz_http_stop = 1;
+}
+
+static int build_browser_url(char *out, size_t osz, const char *bind_ip,
+    uint16_t port, const char *override)
+{
+  const char *host = bind_ip;
+  if (override != NULL && override[0] != '\0') {
+    if (strlen(override) >= osz)
+      return -1;
+    memcpy(out, override, strlen(override) + 1);
+    return 0;
+  }
+  if (strcmp(bind_ip, "0.0.0.0") == 0)
+    host = "127.0.0.1";
+  int n = snprintf(out, osz, "http://%s:%u/", host, (unsigned)port);
+  if (n < 0 || (size_t)n >= osz)
+    return -1;
+  return 0;
+}
+
+static pid_t nfuzz_browser_spawn(const char *cmd, const char *url, int preset,
+    char **extra, int extra_n)
+{
+  pid_t p = fork();
+  if (p < 0) {
+    perror("nfuzz: fork (browser)");
+    return (pid_t)-1;
+  }
+  if (p > 0)
+    return p;
+
+  char *argv[64];
+  int ac = 0;
+  argv[ac++] = (char *)cmd;
+  if (preset == 0) {
+    argv[ac++] = "--headless=new";
+    argv[ac++] = "--disable-gpu";
+    argv[ac++] = "--no-sandbox";
+    argv[ac++] = "--disable-dev-shm-usage";
+    argv[ac++] = "--disable-software-rasterizer";
+  } else if (preset == 1) {
+    argv[ac++] = "--headless";
+  }
+  for (int i = 0; i < extra_n && ac < 60; i++)
+    argv[ac++] = extra[i];
+  argv[ac++] = (char *)url;
+  argv[ac] = NULL;
+  execvp(cmd, argv);
+  _exit(126);
+}
+
+/* First non-empty line: METHOD SP request-target ... */
+static void nfuzz_parse_http_request_line(const char *req, ssize_t reqlen,
+    char *method, size_t method_cap, char *target, size_t target_cap)
+{
+  if (method_cap > 0)
+    method[0] = '\0';
+  if (target_cap > 0)
+    target[0] = '\0';
+  if (reqlen <= 0 || req == NULL)
+    return;
+
+  const char *p = req;
+  const char *end = req + reqlen;
+  while (p < end && (*p == '\r' || *p == '\n' || *p == ' ' || *p == '\t'))
+    p++;
+  const char *line = p;
+  while (p < end && *p != '\r' && *p != '\n')
+    p++;
+  const char *line_end = p;
+  if (line >= line_end)
+    return;
+
+  const char *m = line;
+  while (m < line_end && *m != ' ')
+    m++;
+  size_t ml = (size_t)(m - line);
+  if (ml >= method_cap)
+    ml = method_cap > 0 ? method_cap - 1 : 0;
+  if (method_cap > 0 && ml > 0) {
+    memcpy(method, line, ml);
+    method[ml] = '\0';
+  }
+  if (m >= line_end || *m != ' ')
+    return;
+  m++;
+  while (m < line_end && *m == ' ')
+    m++;
+  const char *u = m;
+  while (u < line_end && *u != ' ')
+    u++;
+  size_t ul = (size_t)(u - m);
+  if (ul >= target_cap)
+    ul = target_cap > 0 ? target_cap - 1 : 0;
+  if (target_cap > 0 && ul > 0) {
+    memcpy(target, m, ul);
+    target[ul] = '\0';
+  }
+}
+
+static void nfuzz_sanitize_log_token(char *s)
+{
+  if (s == NULL)
+    return;
+  for (size_t i = 0; s[i] != '\0'; i++) {
+    unsigned char c = (unsigned char)s[i];
+    if (c < 0x20 || c > 0x7e)
+      s[i] = '?';
+  }
+}
+
+/* http_status 0 means we dropped the connection without a valid response. */
+static void nfuzz_http_log_request(int do_detach, const struct sockaddr_in *peer,
+    const char *req, ssize_t reqlen, int http_status, size_t resp_body)
+{
+  if (do_detach)
+    return;
+
+  char abuf[INET_ADDRSTRLEN];
+  const char *ip = inet_ntop(AF_INET, &peer->sin_addr, abuf, sizeof(abuf));
+  if (ip == NULL)
+    ip = "?";
+  unsigned short pr = ntohs(peer->sin_port);
+
+  if (reqlen <= 0) {
+    fprintf(stderr, "nfuzz: http %s:%u no request data\n", ip, pr);
+    return;
+  }
+
+  char method[24];
+  char target[160];
+  nfuzz_parse_http_request_line(req, reqlen, method, sizeof(method),
+      target, sizeof(target));
+  nfuzz_sanitize_log_token(method);
+  nfuzz_sanitize_log_token(target);
+  const char *ms = method[0] != '\0' ? method : "?";
+  const char *ts = target[0] != '\0' ? target : "?";
+
+  if (http_status == 0)
+    fprintf(stderr, "nfuzz: http %s:%u %s %s -> dropped\n", ip, pr, ms, ts);
+  else
+    fprintf(stderr, "nfuzz: http %s:%u %s %s -> %d (%zu byte body)\n",
+        ip, pr, ms, ts, http_status, resp_body);
+}
+
 static int run_http_daemon(const char *bind_spec, size_t max_body,
     unsigned refresh_sec, int do_detach, const char *pid_file,
-    int allow_remote, long seed_arg)
+    int allow_remote, long seed_arg,
+    struct nfuzz_http_browser_opts *brw)
 {
   char host[256];
   uint16_t port;
@@ -394,6 +561,9 @@ static int run_http_daemon(const char *bind_spec, size_t max_body,
   }
 
   signal(SIGPIPE, SIG_IGN);
+  nfuzz_http_stop = 0;
+  signal(SIGINT, nfuzz_http_sig);
+  signal(SIGTERM, nfuzz_http_sig);
 
   if (do_detach) {
     if (detach_server() != 0)
@@ -444,7 +614,83 @@ static int run_http_daemon(const char *bind_spec, size_t max_body,
     return 1;
   }
 
-  for (;;) {
+  char browser_url[NFUZZ_BROWSER_URL_MAX];
+  pid_t browser_pid = 0;
+  time_t browser_epoch = 0;
+  const char *browser_cmd_resolved = NULL;
+  char browser_cmd_buf[NFUZZ_BROWSER_CMD_MAX];
+
+  if (brw != NULL && brw->auto_browser) {
+    if (build_browser_url(browser_url, sizeof(browser_url), host, port,
+          brw->browser_url_override) != 0) {
+      fprintf(stderr, "nfuzz: browser URL too long or invalid\n");
+      free(body);
+      close(ls);
+      return 2;
+    }
+    browser_cmd_resolved = brw->browser_cmd;
+    if (browser_cmd_resolved == NULL || browser_cmd_resolved[0] == '\0')
+      browser_cmd_resolved = getenv("NFUZZ_BROWSER_CMD");
+    if (browser_cmd_resolved == NULL || browser_cmd_resolved[0] == '\0')
+      browser_cmd_resolved = "chromium";
+    if (strlen(browser_cmd_resolved) >= sizeof(browser_cmd_buf)) {
+      fprintf(stderr, "nfuzz: --browser-cmd too long\n");
+      free(body);
+      close(ls);
+      return 2;
+    }
+    memcpy(browser_cmd_buf, browser_cmd_resolved, strlen(browser_cmd_resolved) + 1);
+    browser_cmd_resolved = browser_cmd_buf;
+    fprintf(stderr, "nfuzz: auto-browser enabled (%s -> %s)\n",
+        browser_cmd_resolved, browser_url);
+  }
+
+  while (!nfuzz_http_stop) {
+    if (brw != NULL && brw->auto_browser) {
+      time_t now = time(NULL);
+      if (browser_pid == 0) {
+        browser_pid = nfuzz_browser_spawn(browser_cmd_resolved, browser_url,
+            brw->browser_preset, brw->browser_extra, brw->browser_extra_n);
+        if (browser_pid <= 0)
+          browser_pid = 0;
+        else
+          browser_epoch = now;
+      } else {
+        int st = 0;
+        pid_t w = waitpid(browser_pid, &st, WNOHANG);
+        if (w == browser_pid) {
+          if (!do_detach)
+            fprintf(stderr, "nfuzz: browser exited (status %d), respawning\n",
+                WIFEXITED(st) ? WEXITSTATUS(st) : -1);
+          browser_pid = 0;
+          continue;
+        }
+        if (brw->browser_restart_sec > 0 && browser_epoch > 0
+            && (unsigned long)(now - browser_epoch)
+                >= (unsigned long)brw->browser_restart_sec) {
+          kill(browser_pid, SIGTERM);
+          (void)waitpid(browser_pid, &st, 0);
+          browser_pid = 0;
+        }
+      }
+    }
+
+    struct pollfd pfd;
+    pfd.fd = ls;
+    pfd.events = POLLIN;
+    int timeout_ms = (brw != NULL && brw->auto_browser) ? 500 : -1;
+    int pr = poll(&pfd, 1, timeout_ms);
+    if (pr < 0) {
+      if (errno == EINTR)
+        continue;
+      perror("nfuzz: poll");
+      break;
+    }
+    if (pr == 0)
+      continue;
+    if (!(pfd.revents & POLLIN))
+      continue;
+
     struct sockaddr_in peer;
     socklen_t plen = sizeof(peer);
     int c = accept(ls, (struct sockaddr *)&peer, &plen);
@@ -467,6 +713,12 @@ static int run_http_daemon(const char *bind_spec, size_t max_body,
         break;
     }
 
+    if (total <= 0) {
+      nfuzz_http_log_request(do_detach, &peer, req, total, 0, 0);
+      close(c);
+      continue;
+    }
+
     size_t blen = 0;
     if (build_http_fuzz_page(body, max_body, &blen, &rng, refresh_sec) != 0
         || blen == 0) {
@@ -475,6 +727,7 @@ static int run_http_daemon(const char *bind_spec, size_t max_body,
           "Connection: close\r\n"
           "Content-Length: 0\r\n\r\n";
       (void)send(c, err, strlen(err), 0);
+      nfuzz_http_log_request(do_detach, &peer, req, total, 500, 0);
       close(c);
       continue;
     }
@@ -490,17 +743,26 @@ static int run_http_daemon(const char *bind_spec, size_t max_body,
           "Content-Length: %zu\r\n\r\n",
           blen)
         != 0) {
+      nfuzz_http_log_request(do_detach, &peer, req, total, 0, 0);
       close(c);
       continue;
     }
 
     (void)send(c, hdr, hpos, 0);
     (void)send(c, body, blen, 0);
+    nfuzz_http_log_request(do_detach, &peer, req, total, 200, blen);
     close(c);
+  }
+
+  if (browser_pid > 0) {
+    kill(browser_pid, SIGTERM);
+    (void)waitpid(browser_pid, NULL, 0);
   }
 
   free(body);
   close(ls);
+  if (!do_detach)
+    fprintf(stderr, "nfuzz: HTTP daemon stopped\n");
   return 0;
 }
 
@@ -520,6 +782,12 @@ static void usage(FILE *fp, const char *argv0)
 "  --http-allow-remote      Allow bind outside 127.0.0.0/8 (required for LAN).\n"
 "  --detach                 Double-fork to background (close stdio).\n"
 "  --pid-file PATH          Write PID after detach (optional).\n"
+"  --auto-browser           With --http-daemon: spawn headless browser to load fuzz URL.\n"
+"  --browser-cmd CMD        Browser executable (default: NFUZZ_BROWSER_CMD or chromium).\n"
+"  --browser-preset P       chromium | firefox | none (default: chromium).\n"
+"  --browser-restart-sec N  SIGTERM and restart browser every N seconds (0=off).\n"
+"  --browser-url URL        Full URL to open (default: http://HOST:PORT/ from bind).\n"
+"  --browser-arg ARG        Extra argv before URL (repeatable; max %d).\n"
 "\n"
 "Raw IPv4 mode:\n"
 "Target / addressing:\n"
@@ -553,16 +821,18 @@ static void usage(FILE *fp, const char *argv0)
 "\n"
 "Environment:\n"
 "  NFUZZ_AUTHORIZED=1        Same acknowledgement as --authorized (either is enough).\n"
+"  NFUZZ_BROWSER_CMD         Default browser for --auto-browser if --browser-cmd omitted.\n"
 "\n",
           argv0, NFUZZ_HTTP_DEFAULT_BIND,
           (unsigned)NFUZZ_HTTP_DEFAULT_MAX_BODY,
-          NFUZZ_HTTP_DEFAULT_REFRESH, (unsigned long)NFUZZ_MAX_COUNT,
+          NFUZZ_HTTP_DEFAULT_REFRESH, NFUZZ_BROWSER_MAX_EXTRA,
+          (unsigned long)NFUZZ_MAX_COUNT,
           NFUZZ_MAX_RATE);
 }
 
 static const char *version_string(void)
 {
-  return "nfuzz (nmap-ppro) 0.2";
+  return "nfuzz (nmap-ppro) 0.4";
 }
 
 static int xtoi(int c)
@@ -853,6 +1123,12 @@ int main(int argc, char **argv)
   int do_detach = 0;
   const char *pid_file = NULL;
 
+  struct nfuzz_http_browser_opts brw;
+  char *browser_extra_argv[NFUZZ_BROWSER_MAX_EXTRA];
+  memset(&brw, 0, sizeof(brw));
+  brw.browser_preset = 0;
+  brw.browser_extra = browser_extra_argv;
+
   const char *hex_file = NULL;
   const char *hex_arg = NULL;
   const char *dst_str = NULL;
@@ -900,6 +1176,80 @@ int main(int argc, char **argv)
       http_refresh = (unsigned)strtoul(argv[i], NULL, 10);
     } else if (strcmp(a, "--http-allow-remote") == 0) {
       http_allow_remote = 1;
+    } else if (strcmp(a, "--auto-browser") == 0) {
+      brw.auto_browser = 1;
+    } else if (strncmp(a, "--browser-cmd=", 14) == 0) {
+      brw.browser_cmd = a + 14;
+    } else if (strcmp(a, "--browser-cmd") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "nfuzz: missing value after %s\n", a);
+        return 2;
+      }
+      brw.browser_cmd = argv[i];
+    } else if (strncmp(a, "--browser-preset=", 17) == 0) {
+      const char *p = a + 17;
+      if (strcasecmp(p, "chromium") == 0)
+        brw.browser_preset = 0;
+      else if (strcasecmp(p, "firefox") == 0)
+        brw.browser_preset = 1;
+      else if (strcasecmp(p, "none") == 0)
+        brw.browser_preset = 2;
+      else {
+        fprintf(stderr,
+            "nfuzz: --browser-preset must be chromium, firefox, or none\n");
+        return 2;
+      }
+    } else if (strcmp(a, "--browser-preset") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "nfuzz: missing value after %s\n", a);
+        return 2;
+      }
+      const char *p = argv[i];
+      if (strcasecmp(p, "chromium") == 0)
+        brw.browser_preset = 0;
+      else if (strcasecmp(p, "firefox") == 0)
+        brw.browser_preset = 1;
+      else if (strcasecmp(p, "none") == 0)
+        brw.browser_preset = 2;
+      else {
+        fprintf(stderr,
+            "nfuzz: --browser-preset must be chromium, firefox, or none\n");
+        return 2;
+      }
+    } else if (strncmp(a, "--browser-restart-sec=", 21) == 0) {
+      brw.browser_restart_sec = (unsigned)strtoul(a + 21, NULL, 10);
+    } else if (strcmp(a, "--browser-restart-sec") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "nfuzz: missing value after %s\n", a);
+        return 2;
+      }
+      brw.browser_restart_sec = (unsigned)strtoul(argv[i], NULL, 10);
+    } else if (strncmp(a, "--browser-url=", 14) == 0) {
+      brw.browser_url_override = a + 14;
+    } else if (strcmp(a, "--browser-url") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "nfuzz: missing value after %s\n", a);
+        return 2;
+      }
+      brw.browser_url_override = argv[i];
+    } else if (strncmp(a, "--browser-arg=", 14) == 0) {
+      if (brw.browser_extra_n >= NFUZZ_BROWSER_MAX_EXTRA) {
+        fprintf(stderr, "nfuzz: too many --browser-arg (max %d)\n",
+            NFUZZ_BROWSER_MAX_EXTRA);
+        return 2;
+      }
+      brw.browser_extra[brw.browser_extra_n++] = (char *)(a + 14);
+    } else if (strcmp(a, "--browser-arg") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "nfuzz: missing value after %s\n", a);
+        return 2;
+      }
+      if (brw.browser_extra_n >= NFUZZ_BROWSER_MAX_EXTRA) {
+        fprintf(stderr, "nfuzz: too many --browser-arg (max %d)\n",
+            NFUZZ_BROWSER_MAX_EXTRA);
+        return 2;
+      }
+      brw.browser_extra[brw.browser_extra_n++] = argv[i];
     } else if (strcmp(a, "--detach") == 0) {
       do_detach = 1;
     } else if (strncmp(a, "--pid-file=", 11) == 0) {
@@ -1034,9 +1384,19 @@ int main(int argc, char **argv)
     return 2;
   }
 
+  if (brw.auto_browser && !http_daemon) {
+    fprintf(stderr, "nfuzz: --auto-browser requires --http-daemon\n");
+    return 2;
+  }
+
+  if (brw.browser_restart_sec > 86400u) {
+    fprintf(stderr, "nfuzz: --browser-restart-sec too large (max 86400)\n");
+    return 2;
+  }
+
   if (http_daemon) {
     return run_http_daemon(http_bind, http_max_body, http_refresh, do_detach,
-        pid_file, http_allow_remote, seed_arg);
+        pid_file, http_allow_remote, seed_arg, &brw);
   }
 
   if (!dst_str) {

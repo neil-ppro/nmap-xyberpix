@@ -47,6 +47,8 @@ _SAFE_MODE_LONG_PREFIX_BLOCKLIST: tuple[str, ...] = (
     "--iR",
     "--proxies",
     "--proxy",
+    "--ssh-bounce",
+    "--ssh-bounce-port",
     "--sI",
 )
 

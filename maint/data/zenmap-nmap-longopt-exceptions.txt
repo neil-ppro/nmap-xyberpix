@@ -20,6 +20,8 @@ nsock-engine                       # engine selection; advanced
 oH                                 # HTML output; rarely used from Zenmap
 proxies                            # proxy chain; advanced / MCP-sensitive
 proxy                              # alias of proxies
+ssh-bounce                         # SSH jump / SOCKS; advanced / MCP-sensitive
+ssh-bounce-port                    # with ssh-bounce
 rH                                 # alias; Zenmap exposes --randomize-hosts
 resolve-all                        # DNS advanced
 resume                             # resume scan; file-based workflow

@@ -199,6 +199,8 @@ FIREWALL/IDS EVASION AND SPOOFING:
   \-e <iface>: Use specified interface
   \-g/\-\-source\-port <portnum>: Use given port number
   \-\-proxies <url1,[url2],\&.\&.\&.>: Relay connections through HTTP/SOCKS4 proxies
+  \-\-ssh\-bounce <user@host>: OpenSSH \-D SOCKS4; same scope as \-\-proxies (nmap\-ppro)
+  \-\-ssh\-bounce\-port <P>: SSH port on jump host (default 22; nmap\-ppro)
   \-\-data <hex string>: Append a custom payload to sent packets
   \-\-data\-string <string>: Append a custom ASCII string to sent packets
   \-\-data\-length <num>: Append random data to sent packets
@@ -1961,6 +1963,16 @@ and
 SOCKS4\&.
 .sp
 Warning: this feature is still under development and has limitations\&. It is implemented within the nsock library and thus has no effect on the ping, port scanning and OS discovery phases of a scan\&. Only NSE and version scan benefit from this option so far\(emother features may disclose your true address\&. SSL connections are not yet supported, nor is proxy\-side DNS resolution (hostnames are always resolved by Nmap)\&.
+.RE
+.PP
+\fB\-\-ssh\-bounce \fR\fB\fIuser@host\fR\fR (nmap\-ppro: relay via OpenSSH dynamic forward)
+.RS 4
+Runs \fBssh\fR(1) with \fB\-N\fR and a loopback \fB\-D\fR (SOCKS) listener, then applies the same proxy behavior as \fB\-\-proxies socks4://127\&.0\&.0\&.1:\fIport\fR\&. Requires the OpenSSH client in \fBPATH\fR; authentication follows your normal SSH configuration\&. Mutually exclusive with \fB\-\-proxies\fR\&. The tunnel is stopped when Nmap exits\&. Not supported on Windows or Amiga builds\(emuse \fBssh \-N \-D\fR and \fB\-\-proxies\fR manually there\&.
+.RE
+.PP
+\fB\-\-ssh\-bounce\-port \fR\fB\fIP\fR\fR (nmap\-ppro: SSH port on jump host)
+.RS 4
+Port for \fBssh \-p\fR when connecting to the host given by \fB\-\-ssh\-bounce\fR (default 22)\&.
 .RE
 .PP
 \fB\-\-badsum\fR (Send packets with bogus TCP/UDP checksums)

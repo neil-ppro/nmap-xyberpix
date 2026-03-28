@@ -40,6 +40,15 @@ Raw mode: the base packet is hexadecimal (see
 .BR \-\-hex " or " \-\-hex\-file ).
 The IPv4 version nibble must be 4. Typical use requires superuser privileges.
 HTTP mode does not require raw socket privileges.
+.PP
+In the foreground (without
+.BR \-\-detach ),
+each accepted TCP connection is logged to standard error as one line: client
+IPv4 address and port, HTTP method and request target parsed from the first
+non\-empty line, the status code returned (or
+.B dropped
+if the response could not be built), and the fuzzed HTML body size in bytes.
+Detached servers skip this logging because standard error is typically closed.
 .SH OPTIONS
 .TP
 .BR \-\-authorized
@@ -73,6 +82,59 @@ Double\-fork to the background and detach from the terminal (HTTP mode only).
 .BI \-\-pid\-file " PATH"
 Write the process ID after the server is listening (HTTP mode; useful with
 .BR \-\-detach ).
+.TP
+.B \-\-auto\-browser
+Spawn a headless browser process that loads the fuzz URL (URL is passed as the
+last argument to the browser). The server uses a short
+.BR poll (2)
+timeout so it can supervise and optionally restart the child. Requires
+.BR \-\-http\-daemon .
+.TP
+.BI \-\-browser\-cmd " CMD"
+Executable name or path for
+.BR \-\-auto\-browser
+(default:
+.B NFUZZ_BROWSER_CMD
+from the environment, or
+.BR chromium ).
+.TP
+.BI \-\-browser\-preset " NAME"
+Headless-oriented defaults prepended before
+.B \-\-browser\-arg
+entries:
+.B chromium
+(new headless flags, no sandbox),
+.B firefox
+.RB ( \-\-headless ),
+or
+.B none
+(user supplies flags via
+.BR \-\-browser\-arg ).
+Default:
+.BR chromium .
+.TP
+.BI \-\-browser\-restart\-sec " N"
+If
+.I N
+is greater than zero, send
+.B SIGTERM
+to the browser and start a fresh process every
+.I N
+seconds. If zero, the browser is restarted only when it exits.
+.TP
+.BI \-\-browser\-url " URL"
+Open this URL instead of deriving
+.B http://HOST:PORT/
+from
+.BR \-\-http\-bind .
+When the bind address is
+.BR 0.0.0.0 ,
+the derived URL uses
+.B 127.0.0.1
+as the host unless overridden here.
+.TP
+.BI \-\-browser\-arg " ARG"
+Extra argument inserted before the URL (repeatable; maximum 32).
 .SS Raw IPv4 mode
 .TP
 .BI \-\-dst " ADDR"
@@ -149,6 +211,13 @@ If set to
 .BR 1 ,
 equivalent to
 .BR \-\-authorized .
+.TP
+.B NFUZZ_BROWSER_CMD
+Default browser executable for
+.B \-\-auto\-browser
+when
+.B \-\-browser\-cmd
+is not given.
 .SH EXIT STATUS
 0 on success, non\-zero on usage errors, privilege/socket failures, or send errors.
 .SH NOTES

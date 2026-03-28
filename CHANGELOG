@@ -1,5 +1,23 @@
 #Nmap Changelog ($Id$); -*-text-*-
 
+o [nmap-ppro] New options --ssh-bounce user@host and --ssh-bounce-port P: fork
+  OpenSSH (-N -D on loopback) and set the SOCKS4 proxy chain used for version
+  detection and NSE (same nsock scope/limitations as --proxies). Mutually
+  exclusive with --proxies. Unix only; Windows/Amiga suggest manual ssh -D +
+  --proxies. MCP safe mode blocks these flags; documented in refguide,
+  nmap(1), README-nmap-ppro.md, SECURITY-OVERVIEW.
+
+o [nmap-ppro] nfuzz --http-daemon: foreground mode logs each HTTP connection to
+  stderr (client, method, path, status, response body size); no log lines when
+  --detach. Documented in nfuzz(1).
+
+o [nmap-ppro] nfuzz --http-daemon: optional --auto-browser spawns a supervised
+  headless browser (Chromium/Firefox presets or custom --browser-cmd) with the
+  fuzz URL as the final argv element; poll-based accept loop, respawn on exit,
+  optional --browser-restart-sec. Env NFUZZ_BROWSER_CMD default when
+  --browser-cmd omitted. Documented in nfuzz(1), README-nmap-ppro.md,
+  SECURITY-OVERVIEW.md.
+
 o [nmap-ppro] nfuzz --http-daemon: minimal HTTP server that serves a new fuzzed
   HTML/JS page per request (meta refresh, malformed markup, random JS blobs, DOM
   API probes) for authorized browser/DOM/JS testing; default bind 127.0.0.1:8787,

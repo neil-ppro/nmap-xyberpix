@@ -90,6 +90,8 @@ siem-syslog
 siem-tag
 source-port
 spoof-mac
+ssh-bounce
+ssh-bounce-port
 stats-every
 stylesheet
 system-dns

@@ -92,6 +92,7 @@
 #include "scan_lists.h"
 #include "payload.h"
 #include "siem_log.h"
+#include "ssh_bounce.h"
 
 #ifndef NOLUA
 #include "nse_main.h"
@@ -277,6 +278,8 @@ static void printusage() {
          "  -e <iface>: Use specified interface\n"
          "  -g/--source-port <portnum>: Use given port number\n"
          "  --proxies <url1,[url2],...>: Relay connections through HTTP/SOCKS4 proxies\n"
+         "  --ssh-bounce <user@host>: OpenSSH dynamic forward (-D); same proxy scope as --proxies\n"
+         "  --ssh-bounce-port <P>: SSH port on jump host (default 22; use with --ssh-bounce)\n"
          "  --data <hex string>: Append a custom payload to sent packets\n"
          "  --data-string <string>: Append a custom ASCII string to sent packets\n"
          "  --data-length <num>: Append random data to sent packets\n"
@@ -588,6 +591,8 @@ void parse_options(int argc, char **argv) {
     {"nsock-engine", required_argument, 0, 0},
     {"proxies", required_argument, 0, 0},
     {"proxy", required_argument, 0, 0},
+    {"ssh-bounce", required_argument, 0, 0},
+    {"ssh-bounce-port", required_argument, 0, 0},
     {"discovery-ignore-rst", no_argument, 0, 0},
     {"osscan-limit", no_argument, 0, 0}, /* skip OSScan if no open ports */
     {"osscan-guess", no_argument, 0, 0}, /* More guessing flexibility */
@@ -837,8 +842,22 @@ void parse_options(int argc, char **argv) {
           if (nsock_set_default_engine(optarg) < 0)
             fatal("Unknown or non-available engine: %s", optarg);
         } else if ((strcmp(long_options[option_index].name, "proxies") == 0) || (strcmp(long_options[option_index].name, "proxy") == 0)) {
+          if (o.ssh_bounce)
+            fatal("Cannot use --proxies together with --ssh-bounce.");
           if (nsock_proxychain_new(optarg, &o.proxy_chain, NULL) < 0)
             fatal("Invalid proxy chain specification");
+        } else if (strcmp(long_options[option_index].name, "ssh-bounce") == 0) {
+          if (o.proxy_chain)
+            fatal("--ssh-bounce cannot be used together with --proxies.");
+          if (o.ssh_bounce)
+            fatal("Duplicate --ssh-bounce option");
+          o.ssh_bounce = strdup(optarg);
+        } else if (strcmp(long_options[option_index].name, "ssh-bounce-port") == 0) {
+          unsigned long pr = strtoul(optarg, NULL, 10);
+
+          if (pr == 0 || pr > 65535)
+            fatal("Invalid --ssh-bounce-port (use 1-65535)");
+          o.ssh_bounce_remote_port = (unsigned short)pr;
         } else if (strcmp(long_options[option_index].name, "discovery-ignore-rst") == 0) {
             o.discovery_ignore_rst = true;
         } else if (strcmp(long_options[option_index].name, "osscan-limit")  == 0) {
@@ -2035,6 +2054,9 @@ int nmap_main(int argc, char *argv[]) {
       siem_log_close();
     exit(0);
   }
+
+  if (!delayed_options.iflist)
+    ssh_bounce_start_if_needed();
 
   /* If he wants to bounce off of an FTP site, that site better damn well be reachable! */
   if (o.bouncescan) {

@@ -5,7 +5,7 @@ Demonstrates MCP safe-mode rejection of scan_options that used to bypass policy:
   * Long --oN /path (file write) — now blocked like short -oN.
   * Long --iL path (file read) — now blocked like short -iL.
   * -iR / --iR (random targets) — blocked.
-  * --resume, --proxies — blocked.
+  * --resume, --proxies, --ssh-bounce — blocked.
 
 Install deps from mcp-nmap-server (see MCP-TARGET PoC), then:
 
@@ -35,6 +35,7 @@ _CASES: list[tuple[str, list[str]]] = [
     ("-iR random targets", ["-iR", "5", "-sn"]),
     ("--resume", ["--resume", "/nonexistent/nmap-resume.xml"]),
     ("--proxies", ["--proxies", "http://127.0.0.1:9", "-sn"]),
+    ("--ssh-bounce", ["--ssh-bounce", "user@jump", "-sn"]),
 ]
 
 

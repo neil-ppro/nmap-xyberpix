@@ -317,6 +317,9 @@ class NmapOps {
   char *exclude_portlist; /* exclude-ports list specified by user */
 
   nsock_proxychain proxy_chain;
+  /* nmap-ppro: optional SSH jump host; ssh_bounce.cc spawns ssh -D and sets proxy_chain */
+  char *ssh_bounce;
+  unsigned short ssh_bounce_remote_port;
   bool discovery_ignore_rst; /* host discovery should not consider TCP RST packet responses as a live asset */
 
 #ifndef NOLUA

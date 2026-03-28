@@ -50,6 +50,8 @@ def _nmap_help_mentions_siem() -> bool:
         ["--iR=10"],
         ["--proxies", "http://127.0.0.1:9"],
         ["--proxy", "http://127.0.0.1:9"],
+        ["--ssh-bounce", "user@jump.example"],
+        ["--ssh-bounce-port", "2222"],
         ["--sI", "zombie:port"],
         ["--datadir=/tmp"],
         ["--datadir", "/tmp"],

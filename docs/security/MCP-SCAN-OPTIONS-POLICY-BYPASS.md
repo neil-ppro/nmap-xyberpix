@@ -43,6 +43,8 @@ targets (Nmap can still scan non-loopback addresses).
   behavior in an MCP-driven flow).
 - **`--proxies` / `--proxy`** — redirects scan traffic via an attacker-chosen
   proxy.
+- **`--ssh-bounce` / `--ssh-bounce-port`** — (nmap-ppro) spawns `ssh -D` or
+  selects a jump host port; same policy class as proxies.
 - **`--sI`** — idle scan (zombie) configuration.
 
 **Fix:** Reject these in safe mode unless `NMAP_MCP_ALLOW_UNSAFE_CLI=1`.
@@ -57,6 +59,7 @@ The following are **rejected** by `nmap_dry_run` in default safe mode:
 -iR 100
 --resume previous.xml
 --proxies http://attacker:8080
+--ssh-bounce user@attacker.example
 ```
 
 A small checker script:

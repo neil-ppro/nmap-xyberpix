@@ -95,6 +95,8 @@ def test_policy_blocks_resume_and_proxies() -> None:
     assert nmap_dry_run(["--proxies", "http://127.0.0.1:9"], ["127.0.0.1"])[
         "ok"
     ] is False
+    assert nmap_dry_run(["--ssh-bounce", "u@h"], ["127.0.0.1"])["ok"] is False
+    assert nmap_dry_run(["--ssh-bounce-port", "2222"], ["127.0.0.1"])["ok"] is False
 
 
 def test_policy_blocks_double_dash() -> None:

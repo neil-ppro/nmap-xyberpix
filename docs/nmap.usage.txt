@@ -78,6 +78,8 @@ FIREWALL/IDS EVASION AND SPOOFING:
   -e <iface>: Use specified interface
   -g/--source-port <portnum>: Use given port number
   --proxies <url1,[url2],...>: Relay connections through HTTP/SOCKS4 proxies
+  --ssh-bounce <user@host>: OpenSSH -D SOCKS4; same scope as --proxies (nmap-ppro)
+  --ssh-bounce-port <P>: SSH port on jump host (default 22; nmap-ppro)
   --data <hex string>: Append a custom payload to sent packets
   --data-string <string>: Append a custom ASCII string to sent packets
   --data-length <num>: Append random data to sent packets

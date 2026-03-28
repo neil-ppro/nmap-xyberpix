@@ -66,6 +66,7 @@
 #include "nmap.h"
 #include "nbase.h"
 #include "NmapOps.h"
+#include "ssh_bounce.h"
 #include "osscan.h"
 #include "nmap_error.h"
 #include "libnetutil/netutil.h"
@@ -108,6 +109,11 @@ NmapOps::~NmapOps() {
   if (exclude_portlist) {
     free(exclude_portlist);
     exclude_portlist = NULL;
+  }
+  if (ssh_bounce) {
+    ssh_bounce_cleanup();
+    free(ssh_bounce);
+    ssh_bounce = NULL;
   }
   if (proxy_chain) {
     nsock_proxychain_delete(proxy_chain);
@@ -341,6 +347,8 @@ void NmapOps::Initialize() {
   portlist = NULL;
   exclude_portlist = NULL;
   proxy_chain = NULL;
+  ssh_bounce = NULL;
+  ssh_bounce_remote_port = 22;
   resuming = false;
   discovery_ignore_rst = false;
 }

@@ -9,13 +9,13 @@ High-level additions (see [CHANGELOG](CHANGELOG) for `[nmap-ppro]` and `[SIEM]` 
 | Area | Summary |
 |------|---------|
 | **SIEM / analytics** | `--siem-log`, `--siem-syslog`, `--siem-tag`: newline-delimited JSON events (`schema_version`, `ts`, `event`, …). Schema: [docs/SIEM-NDJSON-SCHEMA.md](docs/SIEM-NDJSON-SCHEMA.md); examples: [docs/examples/siem/README.md](docs/examples/siem/README.md). |
-| **Scan policy & tuning** | Flags such as `--safe-profile`, `--ipv6-robust`, `--adaptive-rate`, `--auto-hostgroup`; decoy timing via `--decoy-stagger` / `--decoy-stagger-random` (see [docs/IDS-EVASION-NMAP-PPRO.md](docs/IDS-EVASION-NMAP-PPRO.md)). |
+| **Scan policy & tuning** | Flags such as `--safe-profile`, `--ipv6-robust`, `--adaptive-rate`, `--auto-hostgroup`; decoy timing via `--decoy-stagger` / `--decoy-stagger-random` (see [docs/IDS-EVASION-NMAP-PPRO.md](docs/IDS-EVASION-NMAP-PPRO.md)). **`--ssh-bounce`** runs OpenSSH `-D` and relays version/NSE TCP like `--proxies` SOCKS4 (Unix; see man page). |
 | **TLS / service metadata** | Optional TLS fingerprint material in service scan XML when OpenSSL is enabled. |
 | **Zenmap** | Profile editor tab for SIEM and scan-policy options so saved profiles match the fork’s CLI. Install/GTK notes: [docs/ZENMAP-INSTALL.md](docs/ZENMAP-INSTALL.md). |
 | **MCP server** | Python stdio server in [mcp-nmap-server/](mcp-nmap-server/) (`nmap_dry_run`, `nmap_run_scan`, offsec presets, etc.) with a default **safe mode** for options and targets. |
 | **NSE (offsec-oriented)** | Additional scripts and `nselib` helpers (e.g. `http_offsec`); use only on **authorized** targets. Overview: [docs/nse-offsec-scripts.md](docs/nse-offsec-scripts.md). |
 | **Developer tooling** | Optional sanitizers, clang-tidy helpers, and maint scripts under `maint/` (see CHANGELOG). |
-| **nfuzz** | Optional **`nfuzz`** binary: raw IPv4 datagram mutation and/or **`--http-daemon`** (serves new fuzzed HTML/JS per request for browser testing; loopback bind by default). Requires `--authorized` / `NFUZZ_AUTHORIZED=1`; raw mode usually needs root. Built by default on Unix; `./configure --without-nfuzz` to skip. See **`nfuzz(1)`** and [docs/security/SECURITY-OVERVIEW.md](docs/security/SECURITY-OVERVIEW.md). |
+| **nfuzz** | Optional **`nfuzz`** binary: raw IPv4 datagram mutation and/or **`--http-daemon`** (serves new fuzzed HTML/JS per request for browser testing; loopback bind by default). **`--auto-browser`** can launch a supervised headless browser against the fuzz URL. Requires `--authorized` / `NFUZZ_AUTHORIZED=1`; raw mode usually needs root. Built by default on Unix; `./configure --without-nfuzz` to skip. See **`nfuzz(1)`** and [docs/security/SECURITY-OVERVIEW.md](docs/security/SECURITY-OVERVIEW.md). |
 
 ## Build and install
 

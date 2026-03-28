@@ -3683,6 +3683,48 @@ work properly.</para>
 
       <varlistentry>
         <term>
+          <option>--ssh-bounce <replaceable>user@host</replaceable></option>
+          (nmap-ppro: jump host with OpenSSH dynamic forward)
+
+        <indexterm significance="preferred"><primary><option>--ssh-bounce</option></primary></indexterm>
+        <indexterm><primary>SSH</primary><secondary>bounce scan</secondary></indexterm>
+        </term>
+        <listitem>
+
+          <para>Runs the OpenSSH client (<command>ssh</command> must be in
+          <varname>PATH</varname>) with <option>-N</option> and a local
+          <option>-D</option> (SOCKS) listener on loopback, then configures the
+          same proxy chain as <option>--proxies
+          socks4://127.0.0.1:<replaceable>port</replaceable></option>.  This
+          relays <emphasis>version detection and NSE TCP connections</emphasis>
+          through the jump host toward your targets, subject to the same
+          nsock limitations as <option>--proxies</option> (no effect on raw
+          ping/portscan phases; SOCKS4 is IPv4 only from the proxy&rsquo;s
+          perspective).  Authentication uses your normal SSH configuration
+          (keys, <filename>~/.ssh/config</filename>, etc.).  The tunnel is torn
+          down when Nmap exits.  Mutually exclusive with
+          <option>--proxies</option>.  Not available on Windows or Amiga
+          builds; there, start <command>ssh -N -D</command> manually and pass
+          <option>--proxies</option>.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>
+          <option>--ssh-bounce-port <replaceable>P</replaceable></option>
+          (nmap-ppro: SSH server port on the jump host)
+
+        <indexterm><primary><option>--ssh-bounce-port</option></primary></indexterm>
+        </term>
+        <listitem>
+
+          <para>SSH port for the jump host given to
+          <option>--ssh-bounce</option> (default 22).</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>
           <option>--badsum</option> (Send packets with bogus TCP/UDP checksums)
         <indexterm><primary><option>--badsum</option></primary></indexterm>
         <indexterm><primary>TCP checksum</primary></indexterm>
