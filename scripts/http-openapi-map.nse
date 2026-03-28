@@ -14,7 +14,7 @@ delete, internal, debug, exec, token, password).
 Use only on systems you are authorized to test.
 ]]
 
-author = "nmap-ppro"
+author = "nmap-xyberpix"
 license = "Same as Nmap--See https://nmap.org/book/man-legal.html"
 categories = {"discovery", "safe"}
 

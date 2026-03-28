@@ -2,7 +2,7 @@
 """
 Zenmap ↔ Nmap CLI parity checks (no GTK import).
 
-1. nmap-ppro SIEM / scan-policy long options appear in NmapOptions.LONG_OPTIONS,
+1. nmap-xyberpix SIEM / scan-policy long options appear in NmapOptions.LONG_OPTIONS,
    OptionBuilder.py (SIEM tab widgets), and profile_editor.xml (labels/tooltips).
 2. Every long option name in maint/data/nmap-long-options-baseline.txt appears in
    Zenmap LONG_OPTIONS except names listed in maint/data/zenmap-nmap-longopt-exceptions.txt
@@ -17,7 +17,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 _MAINT = Path(__file__).resolve().parent
 
-PPRO_LONG_NAMES = frozenset(
+XYBERPIX_LONG_NAMES = frozenset(
     {
         "adaptive-rate",
         "auto-hostgroup",
@@ -66,17 +66,23 @@ def _parse_zenmap_long_options(nmap_options_py: str) -> set[str]:
     )
 
 
-def _check_ppro_subset(ntext: str, otext: str, xml_text: str) -> list[str]:
+def _check_xyberpix_subset(ntext: str, otext: str, xml_text: str) -> list[str]:
     errors: list[str] = []
-    for name in sorted(PPRO_LONG_NAMES):
+    for name in sorted(XYBERPIX_LONG_NAMES):
         needle = f'("{name}", option.'
         if needle not in ntext:
-            errors.append(f'ppro: missing NmapOptions LONG_OPTIONS entry for "{name}"')
+            errors.append(
+                f'nmap-xyberpix: missing NmapOptions LONG_OPTIONS entry for "{name}"'
+            )
         flag = f"--{name}"
         if flag not in otext:
-            errors.append(f"ppro: missing OptionBuilder reference for {flag}")
+            errors.append(
+                f"nmap-xyberpix: missing OptionBuilder reference for {flag}"
+            )
         if f'option="{flag}"' not in xml_text:
-            errors.append(f"ppro: missing profile_editor.xml option_check for {flag}")
+            errors.append(
+                f"nmap-xyberpix: missing profile_editor.xml option_check for {flag}"
+            )
     return errors
 
 
@@ -114,7 +120,7 @@ def main() -> int:
     xml_text = xml.read_text(encoding="utf-8", errors="replace")
 
     errors: list[str] = []
-    errors.extend(_check_ppro_subset(ntext, otext, xml_text))
+    errors.extend(_check_xyberpix_subset(ntext, otext, xml_text))
     try:
         errors.extend(_check_nmap_zenmap_parity(ntext))
     except FileNotFoundError as e:
@@ -130,7 +136,7 @@ def main() -> int:
     exc_n = len(_parse_exception_names())
     print(
         "zenmap_parity_ok",
-        f"ppro={len(PPRO_LONG_NAMES)}",
+        f"nmap-xyberpix={len(XYBERPIX_LONG_NAMES)}",
         f"nmap_longopts={nmap_n}",
         f"zenmap_longopts={zen_n}",
         f"exceptions={exc_n}",

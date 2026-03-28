@@ -3,7 +3,7 @@
 -- Not cryptographically rigorous; intended for authorized protocol testing.
 --
 -- @copyright Same as Nmap--See https://nmap.org/book/man-legal.html
--- @author nmap-ppro
+-- @author nmap-xyberpix
 
 local math = require "math"
 local rand = require "rand"

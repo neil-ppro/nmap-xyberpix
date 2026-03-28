@@ -1,6 +1,6 @@
-# Firewall and IDS-oriented tuning (nmap-ppro)
+# Firewall and IDS-oriented tuning (nmap-xyberpix)
 
-This note describes **nmap-ppro** options and combinations that help operators
+This note describes **nmap-xyberpix** options and combinations that help operators
 run scans more politely or reduce predictable packet patterns that firewalls and
 IDS/IPS devices often key on. Use only on systems and networks you are authorized
 to test.
@@ -35,7 +35,7 @@ See also **`nmap(1)`** under *Firewall/IDS evasion and spoofing* and **`nmap
 
 ## Combining with other controls
 
-These upstream and **nmap-ppro** options are often used together with decoys or
+These upstream and **nmap-xyberpix** options are often used together with decoys or
 on their own to reduce load and obvious scan signatures:
 
 | Goal | Options to consider |

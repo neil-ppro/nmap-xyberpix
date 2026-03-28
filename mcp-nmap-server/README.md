@@ -1,10 +1,10 @@
 # Nmap MCP server
 
-A [Model Context Protocol](https://modelcontextprotocol.io/) (stdio) server that lets AI agents run **Nmap** safely: version/help introspection, command validation (`nmap_dry_run`), execution (`nmap_run_scan`), a small XML summarizer (`nmap_parse_xml_summary`), and **curated nmap-ppro offsec presets** (`nmap_offsec_*`) that run a fixed allowlisted `--script` set without enabling the full unsafe CLI.
+A [Model Context Protocol](https://modelcontextprotocol.io/) (stdio) server that lets AI agents run **Nmap** safely: version/help introspection, command validation (`nmap_dry_run`), execution (`nmap_run_scan`), a small XML summarizer (`nmap_parse_xml_summary`), and **curated nmap-xyberpix offsec presets** (`nmap_offsec_*`) that run a fixed allowlisted `--script` set without enabling the full unsafe CLI.
 
 **Fork security overview** (threat model, env vars, SIEM/NSE pointers): [`docs/security/SECURITY-OVERVIEW.md`](../docs/security/SECURITY-OVERVIEW.md).
 
-This package lives in the **nmap-ppro** tree and is **not** part of the core Nmap install; install it when you want MCP integration.
+This package lives in the **nmap-xyberpix** tree and is **not** part of the core Nmap install; install it when you want MCP integration.
 
 ## Requirements
 
@@ -44,10 +44,10 @@ Point your MCP client at the interpreter and module:
     "nmap": {
       "command": "python3",
       "args": ["-m", "mcp_nmap"],
-      "cwd": "/absolute/path/to/nmap-ppro/mcp-nmap-server",
+      "cwd": "/absolute/path/to/nmap-xyberpix/mcp-nmap-server",
       "env": {
         "NMAP_MCP_BINARY": "/usr/local/bin/nmap",
-        "NMAP_MCP_DATADIR": "/absolute/path/to/nmap-ppro"
+        "NMAP_MCP_DATADIR": "/absolute/path/to/nmap-xyberpix"
       }
     }
   }
@@ -56,7 +56,7 @@ Point your MCP client at the interpreter and module:
 
 Omit `NMAP_MCP_BINARY` if `nmap` is already on `PATH` for that process.
 
-**`NMAP_MCP_DATADIR`** should point at the **root of the nmap-ppro source tree**
+**`NMAP_MCP_DATADIR`** should point at the **root of the nmap-xyberpix source tree**
 (the directory containing `scripts/` and `nselib/`) when using `nmap_offsec_*`
 tools so Nmap loads fork scripts. Omit it if your `nmap` install already ships
 those scripts.
@@ -76,7 +76,7 @@ built-in profiles (e.g. `http_discovery`, `k8s_api_audit`, `intrusive_canaries`)
 that include a fixed `--script` list. This path **does not** require
 `NMAP_MCP_ALLOW_UNSAFE_CLI=1`.
 
-- Set **`NMAP_MCP_DATADIR`** to your nmap-ppro tree when scripts live in the fork.
+- Set **`NMAP_MCP_DATADIR`** to your nmap-xyberpix tree when scripts live in the fork.
 - Preset **`intrusive_canaries`** additionally requires **`allow_intrusive_offsec=true`**
   on the tool call **and** **`NMAP_MCP_OFFSEC_INTRUSIVE=1`** in the server environment.
 

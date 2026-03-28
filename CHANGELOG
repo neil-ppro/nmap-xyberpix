@@ -1,11 +1,21 @@
 #Nmap Changelog ($Id$); -*-text-*-
 
-o [nmap-ppro] Core/nsock: replace remaining unbounded sprintf with snprintf or
+o [nmap-xyberpix] Fork branding: standardize on the **nmap-xyberpix** name and
+  `[nmap-xyberpix]` CHANGELOG tag (replacing nmap-ppro). Renamed
+  `README-nmap-xyberpix.md`, `docs/IDS-EVASION-NMAP-XYBERPIX.md`, and CI workflow
+  `.github/workflows/nmap-xyberpix-checks.yml`; updated cross-references, Zenmap
+  SIEM tab labels, NSE author strings, and maint script diagnostics.
+
+o [nmap-xyberpix] Core/nsock: replace remaining unbounded sprintf with snprintf or
   Snprintf in nsock peer address formatting, fallback strerror message,
   reverse-DNS PTR assembly, TCP option string (MSS), and ICMP packet summary
   lines (libnetutil).
 
-o [nmap-ppro] Nping: security-focused hardening outside HTTP stress: bounded
+o [nmap-xyberpix] Ncat: SOCKS4a proxy request uses memcpy with explicit lengths after
+  size checks instead of strcpy. Nfuzz: browser URL override and --browser-cmd
+  copy use explicit NUL termination (bounded-string style; behavior unchanged).
+
+o [nmap-xyberpix] Nping: security-focused hardening outside HTTP stress: bounded
   Snprintf for BPF filter assembly (no strlen underflow), echo-server BPF and
   fallback IP string; ICMP advert entry parsing null-terminates split fields;
   mode2Ascii and several utils use Snprintf; ARP/MAC display strings bounded;
@@ -14,7 +24,7 @@ o [nmap-ppro] Nping: security-focused hardening outside HTTP stress: bounded
   TCP/UDP packet info fixed wrong buffer on unknown src address family
   (srcipstring vs dstipstring).
 
-o [nmap-ppro] Nping: optional authorized HTTP load/resilience mode --http-stress
+o [nmap-xyberpix] Nping: optional authorized HTTP load/resilience mode --http-stress
   (parallel cleartext HTTP/1.1 over TCP via nsock), gated by --authorized-dos or
   NPING_DOS_AUTHORIZED=1, with --http-path, --http-method, --http-body,
   --stress-parallel, --stress-duration, and -c/--count; default destination port
@@ -27,44 +37,44 @@ o [nmap-ppro] Nping: optional authorized HTTP load/resilience mode --http-stress
   strdup ordering, snprintf truncation checks, header-end detection without
   strstr on raw bytes, 64-bit attempt counters, and null-safe nsock callbacks.
 
-o [nmap-ppro] New options --ssh-bounce user@host and --ssh-bounce-port P: fork
+o [nmap-xyberpix] New options --ssh-bounce user@host and --ssh-bounce-port P: fork
   OpenSSH (-N -D on loopback) and set the SOCKS4 proxy chain used for version
   detection and NSE (same nsock scope/limitations as --proxies). Mutually
   exclusive with --proxies. Unix only; Windows/Amiga suggest manual ssh -D +
   --proxies. MCP safe mode blocks these flags; documented in refguide,
-  nmap(1), README-nmap-ppro.md, SECURITY-OVERVIEW.
+  nmap(1), README-nmap-xyberpix.md, SECURITY-OVERVIEW.
 
-o [nmap-ppro] nfuzz --http-daemon: foreground mode logs each HTTP connection to
+o [nmap-xyberpix] nfuzz --http-daemon: foreground mode logs each HTTP connection to
   stderr (client, method, path, status, response body size); no log lines when
   --detach. Documented in nfuzz(1).
 
-o [nmap-ppro] nfuzz --http-daemon: optional --auto-browser spawns a supervised
+o [nmap-xyberpix] nfuzz --http-daemon: optional --auto-browser spawns a supervised
   headless browser (Chromium/Firefox presets or custom --browser-cmd) with the
   fuzz URL as the final argv element; poll-based accept loop, respawn on exit,
   optional --browser-restart-sec. Env NFUZZ_BROWSER_CMD default when
-  --browser-cmd omitted. Documented in nfuzz(1), README-nmap-ppro.md,
+  --browser-cmd omitted. Documented in nfuzz(1), README-nmap-xyberpix.md,
   SECURITY-OVERVIEW.md.
 
-o [nmap-ppro] nfuzz --http-daemon: minimal HTTP server that serves a new fuzzed
+o [nmap-xyberpix] nfuzz --http-daemon: minimal HTTP server that serves a new fuzzed
   HTML/JS page per request (meta refresh, malformed markup, random JS blobs, DOM
   API probes) for authorized browser/DOM/JS testing; default bind 127.0.0.1:8787,
   --http-allow-remote for non-loopback, optional --detach and --pid-file.
-  Documented in nfuzz(1), README-nmap-ppro.md, SECURITY-OVERVIEW.md.
+  Documented in nfuzz(1), README-nmap-xyberpix.md, SECURITY-OVERVIEW.md.
 
-o [nmap-ppro] Optional nfuzz utility: single-file C binary plus nfuzz(1) for
+o [nmap-xyberpix] Optional nfuzz utility: single-file C binary plus nfuzz(1) for
   raw IPv4 datagram mutation (IP_HDRINCL), checksum repair, rate limiting, and
   explicit --authorized / NFUZZ_AUTHORIZED=1 gating. Integrated into configure
   (--without-nfuzz) and top-level Makefile (install/uninstall); skipped on
-  MinGW/Cygwin. Documented in README-nmap-ppro.md and docs/security/
+  MinGW/Cygwin. Documented in README-nmap-xyberpix.md and docs/security/
   SECURITY-OVERVIEW.md.
 
-o [nmap-ppro][NSE] Added proto-generic-fuzzer (intrusive, gated by
+o [nmap-xyberpix][NSE] Added proto-generic-fuzzer (intrusive, gated by
   proto-generic-fuzzer.unsafe=1) and nselib/proto_fuzz.lua: TCP/UDP/SSL sends
   with pluggable mutation strategies, iteration/chain limits, optional connection
   reuse. Documented in docs/nse-offsec-scripts.md; not on the MCP offsec
   allowlist.
 
-o [Zenmap][nmap-ppro] Documented GTK 3 / PyGObject stack and distro packages in
+o [Zenmap][nmap-xyberpix] Documented GTK 3 / PyGObject stack and distro packages in
   docs/ZENMAP-INSTALL.md; optional zenmap/requirements.txt for venvs. Profile
   Editor adds “Compare to profile…” (unified diff of normalized commands).
   Search window can export selected results as JSON (metadata summary).
@@ -72,111 +82,111 @@ o [Zenmap][nmap-ppro] Documented GTK 3 / PyGObject stack and distro packages in
   or file-reading options (-A, -sC, --script*, -iL, --script-args-file).
   maint/zenmap_profile_diff.py compares two saved profile commands on the CLI.
 
-o [Zenmap][nmap-ppro] maint/check_zenmap_siem_flags.py enforces nmap-ppro
+o [Zenmap][nmap-xyberpix] maint/check_zenmap_siem_flags.py enforces nmap-xyberpix
   options in profile_editor.xml, compares nmap.cc long_options (baseline) to
   NmapOptions.LONG_OPTIONS via maint/data/zenmap-nmap-longopt-exceptions.txt,
   and clarifies SIEM tab short_desc for --adaptive-rate and --auto-hostgroup.
 
-o [nmap-ppro][MCP] nmap_parse_xml_summary uses defusedxml (entity-safe) instead
+o [nmap-xyberpix][MCP] nmap_parse_xml_summary uses defusedxml (entity-safe) instead
   of regex; caps returned hosts at 10,000; subprocess stdout/stderr capped by
   default (2 MiB / 512 KiB) with optional NMAP_MCP_MAX_STDOUT_BYTES /
   NMAP_MCP_MAX_STDERR_BYTES. Dependency: defusedxml. Tests in
   mcp-nmap-server/tests/test_xml_parse.py; documented in mcp-nmap-server/README.md.
 
-o [nmap-ppro][SIEM] Added docs/examples/siem/README.md (jq, Splunk, Elastic/
+o [nmap-xyberpix][SIEM] Added docs/examples/siem/README.md (jq, Splunk, Elastic/
   Filebeat-oriented NDJSON notes); linked from SIEM-NDJSON-SCHEMA.md,
-  SECURITY-OVERVIEW.md, and README-nmap-ppro.md.
+  SECURITY-OVERVIEW.md, and README-nmap-xyberpix.md.
 
-o [nmap-ppro][NSE] http-oauth-misconfig, http-websocket-hunt, and
+o [nmap-xyberpix][NSE] http-oauth-misconfig, http-websocket-hunt, and
   tls-clientcert-optional-downgrade validate basepath and full request paths
   via http_offsec; tls script accepts optional basepath prefix for probes.
 
-o [nmap-ppro][CI] nmap-ppro-checks workflow: Windows MCP pytest job; SIEM smoke
+o [nmap-xyberpix][CI] nmap-xyberpix-checks workflow: Windows MCP pytest job; SIEM smoke
   uses upload-artifact/download-artifact so the binary is built once; long-options
   baseline in maint/data/nmap-long-options-baseline.txt with
   maint/check_mcp_longopt_baseline.py / maint/update_mcp_longopt_baseline.py;
   shared parser maint/nmap_longopts_from_cc.py.
 
-o [nmap-ppro] Operator and maintainer tooling: docs/security/SECURITY-OVERVIEW.md
+o [nmap-xyberpix] Operator and maintainer tooling: docs/security/SECURITY-OVERVIEW.md
   (MCP threat model and env vars), docs/SIEM-NDJSON-SCHEMA.md (field reference
   and schema_version policy), docs/UPSTREAM-MERGE.md and maint/FORK-FILES.md /
   maint/merge-upstream.sh for upstream merges; maint/check_zenmap_siem_flags.py
   and maint/check_offsec_mcp_sync.py; maint/siem_ndjson_smoketest.sh; expanded
   docs/nse-offsec-scripts.md (script-args, MCP allowlist, maintainer checklist).
-  GitHub Actions workflow .github/workflows/nmap-ppro-checks.yml runs MCP pytest,
-  maint scripts, and an Ubuntu SIEM NDJSON smoke build. README-nmap-ppro.md and
+  GitHub Actions workflow .github/workflows/nmap-xyberpix-checks.yml runs MCP pytest,
+  maint scripts, and an Ubuntu SIEM NDJSON smoke build. README-nmap-xyberpix.md and
   mcp-nmap-server/README.md link the security overview.
 
-o [nmap-ppro] Added README-nmap-ppro.md and a short pointer section in README.md
+o [nmap-xyberpix] Added README-nmap-xyberpix.md and a short pointer section in README.md
   describing fork additions vs upstream Nmap, build/install, MCP setup, and
   where to read security documentation (MCP policy, docs/security/, offsec NSE).
 
-o [nmap-ppro][SIEM] NDJSON events now include schema_version (1) and ts (UTC
+o [nmap-xyberpix][SIEM] NDJSON events now include schema_version (1) and ts (UTC
   ISO-8601) on every line; siem_log.cc uses a shared envelope builder. Opening
   --siem-log file failure is a warning only (scan continues; syslog-only still
   works). Documented in docs/nmap.1.
 
-o [nmap-ppro][MCP] Safe-mode scan option checks use module-level blocklist tables
+o [nmap-xyberpix][MCP] Safe-mode scan option checks use module-level blocklist tables
   plus _policy_long_option_safe_mode / _policy_short_o_output_error; added
   maintainer tests (blocklist coverage, fuzz stability; live nmap --siem-log
   schema check when NMAP_MCP_TEST_LIVE_SIEM=1). Long-form --o* stdout success
   returns ("", new_i); treat empty o_sub as success so the scan index advances
   (avoids infinite loop on argv like --oX -).
 
-o [nmap-ppro] Decoy scanning hardening: --decoy-stagger <usec> and
+o [nmap-xyberpix] Decoy scanning hardening: --decoy-stagger <usec> and
   --decoy-stagger-random spread -D decoy packets in time (default remains
   back-to-back) to reduce synchronized bursts against rate-based IDS. IPv4 raw
   decoy probes now draw a fresh IP ID per decoy. Fixed UDP IPv6 raw decoy
   probes to use the UDP destination port (not TCP). Zenmap profile editor
   exposes the new options under SIEM & scan policy. Documented in docs/nmap.1,
-  docs/refguide.xml, docs/nmap.usage.txt, and docs/IDS-EVASION-NMAP-PPRO.md.
+  docs/refguide.xml, docs/nmap.usage.txt, and docs/IDS-EVASION-NMAP-XYBERPIX.md.
 
-o [nmap-ppro] --decoy-stagger: parse with strtol (reject non-decimal tokens, trailing
+o [nmap-xyberpix] --decoy-stagger: parse with strtol (reject non-decimal tokens, trailing
   junk, and overflow). --decoy-stagger-random delays are uniform in [1, N] μs via
   rejection sampling (no modulo bias). Stagger helper is inlined so the usual
   no-stagger path only pays a few integer compares per decoy.
 
-o [nmap-ppro][Security] mcp-nmap-server: extend safe-mode scan_options policy
+o [nmap-xyberpix][Security] mcp-nmap-server: extend safe-mode scan_options policy
   for long --oN/--oG/--oX (same rules as short -o*), --iL, -iR/--iR, --resume,
   --proxies/--proxy, and --sI. Documented in docs/security/
   MCP-SCAN-OPTIONS-POLICY-BYPASS.md.
 
-o [nmap-ppro][Security] mcp-nmap-server: reject target strings that start with
+o [nmap-xyberpix][Security] mcp-nmap-server: reject target strings that start with
   '-' or Unicode dashes (Nmap getopt parses them as flags after real targets —
   argv injection / safe-mode bypass). Forbid NUL in argv fragments. Documented
   with PoC under docs/security/MCP-TARGET-ARGV-INJECTION.md.
 
-o [nmap-ppro][Security] nselib/http_offsec.lua: assert_safe_http_request_path /
+o [nmap-xyberpix][Security] nselib/http_offsec.lua: assert_safe_http_request_path /
   assert_safe_basepath to block CRLF/NUL/whitespace in paths used with http.get
   / http.post; applied in http-openapi-map, http-graphql-introspect,
   http-ssrf-canary, http-cloud-metadata-reach, http-llm-proxy-leak.
 
-o [nmap-ppro][MCP] mcp-nmap-server: added nmap_offsec_list_presets,
+o [nmap-xyberpix][MCP] mcp-nmap-server: added nmap_offsec_list_presets,
   nmap_offsec_dry_run, and nmap_offsec_run_scan for curated allowlisted NSE
   without NMAP_MCP_ALLOW_UNSAFE_CLI; optional NMAP_MCP_DATADIR and
   NMAP_MCP_OFFSEC_INTRUSIVE (with tool flag) for intrusive_canaries preset.
   Documented in mcp-nmap-server/README.md and docs/nse-offsec-scripts.md.
 
-o [nmap-ppro] Added docs/nse-offsec-scripts.md (offsec NSE usage, intrusive
+o [nmap-xyberpix] Added docs/nse-offsec-scripts.md (offsec NSE usage, intrusive
   script-args gating, MCP pointers) and maint/nse_offsec_selftest.py (local HTTP
   fixture + Nmap smoke checks). nselib/http_offsec.lua returns _ENV so
   require(\"http_offsec\") yields the module table (matches other nselib modules).
 
-o [nmap-ppro] k8s-api-anon-audit.nse classifies TLS/connection failures,
+o [nmap-xyberpix] k8s-api-anon-audit.nse classifies TLS/connection failures,
   401/403 with WWW-Authenticate, anonymous JSON vs other responses.
   http-llm-proxy-leak.nse uses http_offsec.intrusive_gate and tighter reporting.
 
-o [nmap-ppro] Replaced strcpy/sprintf/strcat in output.cc and nse_fs.cc with
+o [nmap-xyberpix] Replaced strcpy/sprintf/strcat in output.cc and nse_fs.cc with
   bounded APIs; added configure --enable-asan and --enable-ubsan; maint/
   build-with-sanitizers.sh, run-clang-tidy.sh (needs compile_commands.json),
   check-no-unsafe-string-ops.sh, and .clang-tidy for dev static analysis.
 
-o [nmap-ppro] Security/robustness: bounded formatting for TCP/IP ID/TS sequence
+o [nmap-xyberpix] Security/robustness: bounded formatting for TCP/IP ID/TS sequence
   XML lists (output.cc); capped ICMP-driven adaptive timing batching (scan_adaptive);
   safer TLS fingerprint construction (service_scan). SIEM JSON escaping reserves
   output capacity to reduce reallocations (siem_log).
 
-o [nmap-ppro] Added scan policy and fingerprinting helpers: --safe-profile
+o [nmap-xyberpix] Added scan policy and fingerprinting helpers: --safe-profile
   (Polite/T2 timing, host-group cap, optional parallelism and max-rate defaults),
   --ipv6-robust (longer IPv6 RTT/retry defaults), --adaptive-rate (slow down on
   ICMPv4 admin-prohibited codes 9/10/13 and ICMPv6 admin prohibitions),
@@ -195,27 +205,27 @@ o [SIEM] Added optional scan telemetry for analytics and SIEM pipelines:
   paths), else syslog(3); on Windows use ReportEvent to the Application log;
   AmigaOS requires logger(1). Combine with --siem-log to mirror NDJSON to disk
   and the system log. Respects --append-output for the SIEM file. Documented in
-  nmap --help and docs/nmap.1. [nmap-ppro]
+  nmap --help and docs/nmap.1. [nmap-xyberpix]
 
-o [Zenmap][nmap-ppro] The profile editor includes a "SIEM & scan policy" tab
+o [Zenmap][nmap-xyberpix] The profile editor includes a "SIEM & scan policy" tab
   for --safe-profile, --ipv6-robust, --adaptive-rate, --auto-hostgroup,
   --decoy-stagger, --decoy-stagger-random, --siem-log, --siem-syslog, and
   --siem-tag. zenmapCore/NmapOptions.py parses and renders these options so
-  saved profiles and generated commands stay consistent with the nmap-ppro CLI.
+  saved profiles and generated commands stay consistent with the nmap-xyberpix CLI.
 
-o [MCP][nmap-ppro] Added mcp-nmap-server/: a Python MCP (stdio) server for AI
+o [MCP][nmap-xyberpix] Added mcp-nmap-server/: a Python MCP (stdio) server for AI
   agents with tools nmap_version, nmap_help, nmap_dry_run, nmap_run_scan, and
   nmap_parse_xml_summary. Scans default to loopback-only targets; arbitrary
   targets require tool acknowledgment plus NMAP_MCP_ALLOW_ANY_TARGET=1. See
   mcp-nmap-server/README.md.
 
-o [nmap-ppro] Added ten offensive-research oriented NSE scripts: http-openapi-map,
+o [nmap-xyberpix] Added ten offensive-research oriented NSE scripts: http-openapi-map,
   http-graphql-introspect, http-jwt-probe, http-websocket-hunt, http-oauth-misconfig,
   http-ssrf-canary, http-cloud-metadata-reach, k8s-api-anon-audit,
   tls-clientcert-optional-downgrade, and http-llm-proxy-leak. Use only on authorized
   targets; several require script-args (JWT token, SSRF URL templates).
 
-o [MCP][nmap-ppro] Hardened mcp-nmap-server scan_options: default safe mode
+o [MCP][nmap-xyberpix] Hardened mcp-nmap-server scan_options: default safe mode
   blocks NSE (--script*, -A, -s*C), -iL/--excludefile, custom data paths, file
   outputs except stdout (-oX -, etc.), --append-output, and '--' in options.
   Set NMAP_MCP_ALLOW_UNSAFE_CLI=1 to restore unrestricted CLI for trusted

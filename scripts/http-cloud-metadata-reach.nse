@@ -16,7 +16,7 @@ Example: --script-args 'http-cloud-metadata-reach.template=/api/proxy?target=CAN
 Intrusive: may cause the application to reach metadata IPs.
 ]]
 
-author = "nmap-ppro"
+author = "nmap-xyberpix"
 license = "Same as Nmap--See https://nmap.org/book/man-legal.html"
 categories = {"discovery", "intrusive"}
 

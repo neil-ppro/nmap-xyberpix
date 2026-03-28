@@ -349,7 +349,7 @@ AC_SUBST(UNINSTALLNPING)
 AC_SUBST(NPING_CLEAN)
 AC_SUBST(NPING_DIST_CLEAN)
 
-# nmap-ppro: nfuzz — raw IPv4 packet fuzzer (Unix; not MinGW)
+# nmap-xyberpix: nfuzz — raw IPv4 packet fuzzer (Unix; not MinGW)
 AC_ARG_WITH(nfuzz, AC_HELP_STRING([--without-nfuzz], [Do not build the nfuzz raw IPv4 fuzzer]), [], [with_nfuzz=yes])
 case "$host" in
   *-*-mingw32*|*-*-cygwin*)

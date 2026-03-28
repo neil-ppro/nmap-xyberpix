@@ -546,13 +546,14 @@ static int do_proxy_socks4(void)
     socks4msg.type = SOCKS_CONNECT;
     socks4msg.port = htons(o.portno);
 
-    if (strlen(username) >= sizeof(socks4msg.data)) {
+    size_t ulen = strlen(username);
+    if (ulen >= sizeof(socks4msg.data)) {
         loguser("Error: username is too long.\n");
         close(sd);
         return -1;
     }
-    strcpy(socks4msg.data, username);
-    datalen = strlen(username) + 1;
+    memcpy(socks4msg.data, username, ulen + 1);
+    datalen = ulen + 1;
 
     if (proxyresolve(o.target, 0, &addr.storage, &sslen, AF_INET)) {
         /* target resolution has failed, possibly because it is disabled */
@@ -564,13 +565,14 @@ static int do_proxy_socks4(void)
         if (o.verbose)
             loguser("Host %s will be resolved by the proxy.\n", o.target);
         socks4msg.address = inet_addr("0.0.0.1");
-        if (datalen + strlen(o.target) >= sizeof(socks4msg.data)) {
+        size_t tlen = strlen(o.target);
+        if (datalen + tlen >= sizeof(socks4msg.data)) {
             loguser("Error: host name is too long.\n");
             close(sd);
             return -1;
         }
-        strcpy(socks4msg.data + datalen, o.target);
-        datalen += strlen(o.target) + 1;
+        memcpy(socks4msg.data + datalen, o.target, tlen + 1);
+        datalen += tlen + 1;
     } else {
         /* addr is now populated with sockaddr_in */
         socks4msg.address = addr.in.sin_addr.s_addr;

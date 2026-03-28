@@ -1,5 +1,5 @@
 /*
- * nfuzz — raw IPv4 packet mutation harness + optional HTTP fuzz server (nmap-ppro)
+ * nfuzz — raw IPv4 packet mutation harness + optional HTTP fuzz server (nmap-xyberpix)
  *
  * Raw mode: sends crafted IPv4 datagrams via a raw socket (IP_HDRINCL).
  * HTTP mode: serves dynamically generated HTML/JS for authorized browser
@@ -392,9 +392,11 @@ static int build_browser_url(char *out, size_t osz, const char *bind_ip,
 {
   const char *host = bind_ip;
   if (override != NULL && override[0] != '\0') {
-    if (strlen(override) >= osz)
+    size_t olen = strlen(override);
+    if (olen >= osz)
       return -1;
-    memcpy(out, override, strlen(override) + 1);
+    memcpy(out, override, olen);
+    out[olen] = '\0';
     return 0;
   }
   if (strcmp(bind_ip, "0.0.0.0") == 0)
@@ -633,13 +635,15 @@ static int run_http_daemon(const char *bind_spec, size_t max_body,
       browser_cmd_resolved = getenv("NFUZZ_BROWSER_CMD");
     if (browser_cmd_resolved == NULL || browser_cmd_resolved[0] == '\0')
       browser_cmd_resolved = "chromium";
-    if (strlen(browser_cmd_resolved) >= sizeof(browser_cmd_buf)) {
+    size_t cmdlen = strlen(browser_cmd_resolved);
+    if (cmdlen >= sizeof(browser_cmd_buf)) {
       fprintf(stderr, "nfuzz: --browser-cmd too long\n");
       free(body);
       close(ls);
       return 2;
     }
-    memcpy(browser_cmd_buf, browser_cmd_resolved, strlen(browser_cmd_resolved) + 1);
+    memcpy(browser_cmd_buf, browser_cmd_resolved, cmdlen);
+    browser_cmd_buf[cmdlen] = '\0';
     browser_cmd_resolved = browser_cmd_buf;
     fprintf(stderr, "nfuzz: auto-browser enabled (%s -> %s)\n",
         browser_cmd_resolved, browser_url);
@@ -832,7 +836,7 @@ static void usage(FILE *fp, const char *argv0)
 
 static const char *version_string(void)
 {
-  return "nfuzz (nmap-ppro) 0.4";
+  return "nfuzz (nmap-xyberpix) 0.4";
 }
 
 static int xtoi(int c)

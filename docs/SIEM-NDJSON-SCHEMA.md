@@ -1,4 +1,4 @@
-# SIEM NDJSON schema (nmap-ppro)
+# SIEM NDJSON schema (nmap-xyberpix)
 
 Scan telemetry from **`--siem-log`**, **`--siem-syslog`**, and **`--siem-tag`** is emitted as **newline-delimited JSON** (one object per line). The same JSON object is embedded as the MSG payload in **RFC 5424** syslog lines when `--siem-syslog` is enabled.
 

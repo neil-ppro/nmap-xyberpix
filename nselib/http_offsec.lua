@@ -1,9 +1,9 @@
 ---
--- Shared helpers for nmap-ppro offensive-research HTTP/NSE scripts: path lists,
+-- Shared helpers for nmap-xyberpix offensive-research HTTP/NSE scripts: path lists,
 -- SSRF/cloud canary URL sets, and intrusive-run gating (script-args .unsafe=1).
 --
 -- @copyright Same as Nmap--See https://nmap.org/book/man-legal.html
--- @author nmap-ppro
+-- @author nmap-xyberpix
 
 local stdnse = require "stdnse"
 local string = require "string"

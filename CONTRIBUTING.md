@@ -12,7 +12,7 @@
 
 This file serves as a supplement to the [HACKING file](HACKING). It contains information specifically about Nmap's use of Github and how contributors can use Github services to participate in Nmap development.
 
-**This repository (nmap-ppro):** Any change that would belong in release notes (features, bug fixes, security, behavior, user-facing docs, build, or CI) must include an entry in the root **`CHANGELOG`** in the same contribution, newest entries first. Conventions are summarized in [`.cursor/rules/changelog.mdc`](.cursor/rules/changelog.mdc).
+**This repository (nmap-xyberpix):** Any change that would belong in release notes (features, bug fixes, security, behavior, user-facing docs, build, or CI) must include an entry in the root **`CHANGELOG`** in the same contribution, newest entries first. Conventions are summarized in [`.cursor/rules/changelog.mdc`](.cursor/rules/changelog.mdc).
 
 ## <a name="repo"></a>Code Repository
 

@@ -72,14 +72,14 @@ TIMING AND PERFORMANCE:
 FIREWALL/IDS EVASION AND SPOOFING:
   -f; --mtu <val>: fragment packets (optionally w/given MTU)
   -D <decoy1,decoy2[,ME],...>: Cloak a scan with decoys
-  --decoy-stagger <usec>: Wait usec between decoy packets (0=off; nmap-ppro)
-  --decoy-stagger-random: Random stagger gaps in [1,usec] (nmap-ppro)
+  --decoy-stagger <usec>: Wait usec between decoy packets (0=off; nmap-xyberpix)
+  --decoy-stagger-random: Random stagger gaps in [1,usec] (nmap-xyberpix)
   -S <IP_Address>: Spoof source address
   -e <iface>: Use specified interface
   -g/--source-port <portnum>: Use given port number
   --proxies <url1,[url2],...>: Relay connections through HTTP/SOCKS4 proxies
-  --ssh-bounce <user@host>: OpenSSH -D SOCKS4; same scope as --proxies (nmap-ppro)
-  --ssh-bounce-port <P>: SSH port on jump host (default 22; nmap-ppro)
+  --ssh-bounce <user@host>: OpenSSH -D SOCKS4; same scope as --proxies (nmap-xyberpix)
+  --ssh-bounce-port <P>: SSH port on jump host (default 22; nmap-xyberpix)
   --data <hex string>: Append a custom payload to sent packets
   --data-string <string>: Append a custom ASCII string to sent packets
   --data-length <num>: Append random data to sent packets

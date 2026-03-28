@@ -1,4 +1,4 @@
-# SIEM integration examples (nmap-ppro NDJSON)
+# SIEM integration examples (nmap-xyberpix NDJSON)
 
 Nmap’s **`--siem-log`** appends **one JSON object per line** (NDJSON). Field definitions and versioning are in [SIEM-NDJSON-SCHEMA.md](../../SIEM-NDJSON-SCHEMA.md).
 
@@ -82,7 +82,7 @@ If JSON lands as a string field, use a **json** processor on that field, then **
 
 ```json
 {
-  "description": "Parse nmap-ppro SIEM line",
+  "description": "Parse nmap-xyberpix SIEM line",
   "processors": [
     { "json": { "field": "message", "target_field": "nmap" } },
     { "date": { "field": "nmap.ts", "target_field": "@timestamp", "formats": [ "ISO8601" ] } }

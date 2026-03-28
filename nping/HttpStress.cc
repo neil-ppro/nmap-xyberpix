@@ -1,6 +1,6 @@
 /***************************************************************************
  * HttpStress.cc -- Authorized parallel HTTP/1.x requests for load testing   *
- *                  (nmap-ppro; requires --authorized-dos)                   *
+ *                  (nmap-xyberpix; requires --authorized-dos)                   *
  ***************************************************************************/
 
 #include "nping.h"

@@ -34,7 +34,7 @@ _ENV_ALLOW_ANY = "NMAP_MCP_ALLOW_ANY_TARGET"
 # Allow --script, -A, -iL, arbitrary -o*/--siem-log paths, etc. Operators only.
 _ENV_UNSAFE_CLI = "NMAP_MCP_ALLOW_UNSAFE_CLI"
 
-# Optional --datadir for nmap-ppro tree (custom nselib/scripts without unsafe CLI).
+# Optional --datadir for nmap-xyberpix tree (custom nselib/scripts without unsafe CLI).
 _ENV_DATADIR = "NMAP_MCP_DATADIR"
 
 # Belt-and-suspenders with allow_intrusive_offsec on offsec preset tools.
@@ -223,7 +223,7 @@ def _parse_nmap_xml_summary(xml_text: str) -> dict[str, Any]:
 _MAX_ARGS = 64
 _MAX_PRESET_ID_LEN = 128
 
-# Curated nmap-ppro NSE scripts for MCP offsec presets (no full unsafe CLI).
+# Curated nmap-xyberpix NSE scripts for MCP offsec presets (no full unsafe CLI).
 _OFFSEC_ALLOWED_SCRIPTS = frozenset(
     {
         "http-openapi-map",
@@ -837,9 +837,9 @@ mcp = FastMCP(
         "By default, scan_options cannot use NSE (--script, -A, -sC), -iL, "
         "arbitrary file outputs (-oA, -oN file, …), or most --datadir-style "
         f"flags; set {_ENV_UNSAFE_CLI}=1 on the server to allow the full CLI. "
-        "Curated nmap-ppro offsec presets (nmap_offsec_*) may run a fixed "
+        "Curated nmap-xyberpix offsec presets (nmap_offsec_*) may run a fixed "
         f"allowlisted --script set without unsafe CLI when {_ENV_DATADIR} points "
-        "at an nmap-ppro source tree (or install includes those scripts)."
+        "at an nmap-xyberpix source tree (or install includes those scripts)."
     ),
 )
 
@@ -958,7 +958,7 @@ def nmap_run_scan(
 
 @mcp.tool()
 def nmap_offsec_list_presets() -> dict[str, Any]:
-    """List built-in nmap-ppro offensive-research scan presets (allowlisted NSE)."""
+    """List built-in nmap-xyberpix offensive-research scan presets (allowlisted NSE)."""
     presets = []
     for pid in sorted(_OFFSEC_PRESETS):
         spec = _OFFSEC_PRESETS[pid]
@@ -974,7 +974,7 @@ def nmap_offsec_list_presets() -> dict[str, Any]:
         "presets": presets,
         "note": (
             f"Use nmap_offsec_dry_run / nmap_offsec_run_scan. Set {_ENV_DATADIR} "
-            "to the nmap-ppro tree so Nmap loads fork scripts and nselib."
+            "to the nmap-xyberpix tree so Nmap loads fork scripts and nselib."
         ),
     }
 
@@ -992,7 +992,7 @@ def nmap_offsec_dry_run(
     Like nmap_dry_run but uses a curated offsec preset (allowlisted --script only).
 
     Intrusive presets require allow_intrusive_offsec=true and server env
-    NMAP_MCP_OFFSEC_INTRUSIVE=1. Optional NMAP_MCP_DATADIR selects the nmap-ppro
+    NMAP_MCP_OFFSEC_INTRUSIVE=1. Optional NMAP_MCP_DATADIR selects the nmap-xyberpix
     data directory (scripts + nselib).
 
     extra_scan_options: only -p, -Pn, -n, --open, -sV/-sT/-sS, -T0..-T5,
@@ -1037,7 +1037,7 @@ def nmap_offsec_run_scan(
     timeout_seconds: int = _DEFAULT_TIMEOUT,
 ) -> dict[str, Any]:
     """
-    Run Nmap with a curated nmap-ppro offsec preset (fixed allowlisted scripts).
+    Run Nmap with a curated nmap-xyberpix offsec preset (fixed allowlisted scripts).
 
     See nmap_offsec_dry_run for policy. Output includes XML on stdout (-oX -).
     """

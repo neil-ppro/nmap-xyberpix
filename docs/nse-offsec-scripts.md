@@ -1,6 +1,6 @@
-# nmap-ppro offensive-research NSE scripts
+# nmap-xyberpix offensive-research NSE scripts
 
-This document describes **optional** scripts in the nmap-ppro fork that support
+This document describes **optional** scripts in the nmap-xyberpix fork that support
 authorized security assessments (API mapping, JWT header review, GraphQL
 introspection checks, Kubernetes API posture, and higher-risk canary probes).
 
@@ -93,7 +93,7 @@ The MCP server exposes **`nmap_offsec_list_presets`**, **`nmap_offsec_dry_run`**
 and **`nmap_offsec_run_scan`** so agents can run a **fixed, allowlisted**
 `--script` set **without** enabling the full unsafe CLI (`NMAP_MCP_ALLOW_UNSAFE_CLI`).
 
-- Set **`NMAP_MCP_DATADIR`** to the **root of the nmap-ppro tree** (the
+- Set **`NMAP_MCP_DATADIR`** to the **root of the nmap-xyberpix tree** (the
   directory containing `scripts/` and `nselib/`) so Nmap loads fork scripts.
 - Intrusive preset **`intrusive_canaries`** requires **`allow_intrusive_offsec=true`**
   on the tool call **and** **`NMAP_MCP_OFFSEC_INTRUSIVE=1`** in the server
@@ -106,4 +106,4 @@ See `mcp-nmap-server/README.md` for general MCP security policy.
 - **`maint/check_offsec_mcp_sync.py`** — MCP allowlist ↔ `scripts/*.nse` ↔ this document (run after editing presets or the table).
 - **`maint/nse_offsec_selftest.py`** — starts a tiny local HTTP server on a **likely HTTP port** (see `shortport.http` / `LIKELY_HTTP_PORTS` so `portrule` matches) and runs a few Nmap invocations against `127.0.0.1`. Set **`NMAP_SELFTEST_BINARY`** if `nmap` is not on `PATH`. The script passes `--datadir` to the repository root so fork `scripts/` and `nselib/` load. The intrusive-gate check runs Nmap with **`-d`**: `stdnse.format_output(false, ...)` normally omits failure text from script output unless debugging is enabled.
 
-CI runs the sync script and MCP tests under **nmap-ppro checks** (see `.github/workflows/nmap-ppro-checks.yml`).
+CI runs the sync script and MCP tests under **nmap-xyberpix checks** (see `.github/workflows/nmap-xyberpix-checks.yml`).

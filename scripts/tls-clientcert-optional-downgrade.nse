@@ -15,7 +15,7 @@ A 200 OK on / without such messages does not prove absence of mTLS on other
 routes - heuristic only.
 ]]
 
-author = "nmap-ppro"
+author = "nmap-xyberpix"
 license = "Same as Nmap--See https://nmap.org/book/man-legal.html"
 categories = {"discovery", "safe"}
 

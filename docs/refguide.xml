@@ -3323,7 +3323,7 @@ services.</para>
       <varlistentry>
         <term>
           <option>--decoy-stagger <replaceable>usec</replaceable></option>
-          (Spread decoy packets in time; nmap-ppro)
+          (Spread decoy packets in time; nmap-xyberpix)
           <indexterm><primary><option>--decoy-stagger</option></primary></indexterm>
         </term>
         <listitem>
@@ -3341,7 +3341,7 @@ services.</para>
       <varlistentry>
         <term>
           <option>--decoy-stagger-random</option>
-          (Random decoy stagger; nmap-ppro)
+          (Random decoy stagger; nmap-xyberpix)
           <indexterm><primary><option>--decoy-stagger-random</option></primary></indexterm>
         </term>
         <listitem>
@@ -3684,7 +3684,7 @@ work properly.</para>
       <varlistentry>
         <term>
           <option>--ssh-bounce <replaceable>user@host</replaceable></option>
-          (nmap-ppro: jump host with OpenSSH dynamic forward)
+          (nmap-xyberpix: jump host with OpenSSH dynamic forward)
 
         <indexterm significance="preferred"><primary><option>--ssh-bounce</option></primary></indexterm>
         <indexterm><primary>SSH</primary><secondary>bounce scan</secondary></indexterm>
@@ -3712,7 +3712,7 @@ work properly.</para>
       <varlistentry>
         <term>
           <option>--ssh-bounce-port <replaceable>P</replaceable></option>
-          (nmap-ppro: SSH server port on the jump host)
+          (nmap-xyberpix: SSH server port on the jump host)
 
         <indexterm><primary><option>--ssh-bounce-port</option></primary></indexterm>
         </term>

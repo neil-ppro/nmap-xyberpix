@@ -1,4 +1,4 @@
-# nmap-ppro security overview
+# nmap-xyberpix security overview
 
 This document ties together **safe-by-default** behavior for fork-specific features: the **MCP server**, **SIEM logging**, and **offensive-research NSE**. It does not replace upstream Nmap’s own security model (privileges, network access, script safety levels).
 
@@ -49,4 +49,4 @@ Use only on **authorized** targets. Intrusive scripts require explicit **`SCRIPT
 
 ## Automated checks in CI
 
-The workflow **nmap-ppro-checks** runs MCP unit tests on **Ubuntu and Windows**, Zenmap flag consistency, offsec/MCP sync, a **`nmap.cc` long-options baseline** check (forces review of MCP safe mode when new `--long-opts` appear), and a **SIEM smoke** job that reuses the built `nmap` binary from an artifact. See [.github/workflows/nmap-ppro-checks.yml](../../.github/workflows/nmap-ppro-checks.yml).
+The workflow **nmap-xyberpix-checks** runs MCP unit tests on **Ubuntu and Windows**, Zenmap flag consistency, offsec/MCP sync, a **`nmap.cc` long-options baseline** check (forces review of MCP safe mode when new `--long-opts` appear), and a **SIEM smoke** job that reuses the built `nmap` binary from an artifact. See [.github/workflows/nmap-xyberpix-checks.yml](../../.github/workflows/nmap-xyberpix-checks.yml).

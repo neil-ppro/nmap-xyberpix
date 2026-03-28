@@ -11,7 +11,7 @@ for manual review. Does not fetch JWKS or perform signature cracking.
 Runs once per scan (prerule) when jwt is set. The token may be sensitive.
 ]]
 
-author = "nmap-ppro"
+author = "nmap-xyberpix"
 license = "Same as Nmap--See https://nmap.org/book/man-legal.html"
 categories = {"discovery", "safe"}
 

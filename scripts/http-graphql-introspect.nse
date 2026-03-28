@@ -14,7 +14,7 @@ types and flags type names suggesting users, roles, files, or secrets.
 Authorized testing only.
 ]]
 
-author = "nmap-ppro"
+author = "nmap-xyberpix"
 license = "Same as Nmap--See https://nmap.org/book/man-legal.html"
 categories = {"discovery", "safe"}
 

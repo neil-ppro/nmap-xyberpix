@@ -15,7 +15,7 @@ Requires http-llm-proxy-leak.unsafe=1 (noisy / may log on target).
 Authorized testing only.
 ]]
 
-author = "nmap-ppro"
+author = "nmap-xyberpix"
 license = "Same as Nmap--See https://nmap.org/book/man-legal.html"
 categories = {"discovery", "intrusive"}
 

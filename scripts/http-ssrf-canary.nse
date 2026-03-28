@@ -20,7 +20,7 @@ Example: --script-args 'http-ssrf-canary.template=/fetch?u=CANARY,http-ssrf-cana
 Intrusive: may trigger outbound fetches from the application.
 ]]
 
-author = "nmap-ppro"
+author = "nmap-xyberpix"
 license = "Same as Nmap--See https://nmap.org/book/man-legal.html"
 categories = {"discovery", "intrusive"}
 

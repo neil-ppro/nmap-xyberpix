@@ -14,7 +14,7 @@ certificates are common; use standard Nmap SSL options if requests fail.
 Use only on clusters you are authorized to assess.
 ]]
 
-author = "nmap-ppro"
+author = "nmap-xyberpix"
 license = "Same as Nmap--See https://nmap.org/book/man-legal.html"
 categories = {"discovery", "safe"}
 

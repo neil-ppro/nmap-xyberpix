@@ -1,4 +1,4 @@
-# Zenmap install notes (nmap-ppro)
+# Zenmap install notes (nmap-xyberpix)
 
 Zenmap in this tree targets **Python 3** and **GTK 3** via **PyGObject** (`gi.repository.Gtk`), consistent with upstream Nmap’s current GUI stack.
 
@@ -25,5 +25,5 @@ Optional: see [zenmap/requirements.txt](../zenmap/requirements.txt) for a minima
 
 ## Related
 
-- Fork overview and security links: [README-nmap-ppro.md](../README-nmap-ppro.md)
+- Fork overview and security links: [README-nmap-xyberpix.md](../README-nmap-xyberpix.md)
 - Building core Nmap: [Nmap Install Guide](https://nmap.org/book/install.html)

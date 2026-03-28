@@ -16,7 +16,7 @@ and missing https on endpoints when issuer is https.
 Heuristic only - manual review required.
 ]]
 
-author = "nmap-ppro"
+author = "nmap-xyberpix"
 license = "Same as Nmap--See https://nmap.org/book/man-legal.html"
 categories = {"discovery", "safe"}
 

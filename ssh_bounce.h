@@ -1,6 +1,6 @@
 /***************************************************************************
  * ssh_bounce.h -- Optional SSH jump-host dynamic forward for --proxies      *
- *                 (nmap-ppro)                                              *
+ *                 (nmap-xyberpix)                                              *
  ***************************************************************************/
 
 #ifndef SSH_BOUNCE_H

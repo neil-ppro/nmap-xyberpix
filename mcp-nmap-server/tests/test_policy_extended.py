@@ -103,7 +103,7 @@ def test_policy_fuzz_random_tokens_no_crash() -> None:
 )
 @pytest.mark.skipif(
     not _nmap_help_mentions_siem(),
-    reason="No nmap with --siem-log in PATH (set NMAP_MCP_BINARY or install nmap-ppro build)",
+    reason="No nmap with --siem-log in PATH (set NMAP_MCP_BINARY or install nmap-xyberpix build)",
 )
 def test_siem_ndjson_schema_on_stdout() -> None:
     exe = _nmap_exe()

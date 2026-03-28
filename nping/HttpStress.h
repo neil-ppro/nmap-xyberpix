@@ -1,5 +1,5 @@
 /***************************************************************************
- * HttpStress.h -- Authorized HTTP load / resilience testing (nmap-ppro)   *
+ * HttpStress.h -- Authorized HTTP load / resilience testing (nmap-xyberpix)   *
  ***************************************************************************/
 
 #ifndef NPING_HTTPSTRESS_H

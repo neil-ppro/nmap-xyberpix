@@ -43,7 +43,7 @@ targets (Nmap can still scan non-loopback addresses).
   behavior in an MCP-driven flow).
 - **`--proxies` / `--proxy`** — redirects scan traffic via an attacker-chosen
   proxy.
-- **`--ssh-bounce` / `--ssh-bounce-port`** — (nmap-ppro) spawns `ssh -D` or
+- **`--ssh-bounce` / `--ssh-bounce-port`** — (nmap-xyberpix) spawns `ssh -D` or
   selects a jump host port; same policy class as proxies.
 - **`--sI`** — idle scan (zombie) configuration.
 

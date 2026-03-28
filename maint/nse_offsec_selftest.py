@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Local maint harness: HTTP fixture + Nmap against 127.0.0.1 for nmap-ppro offsec NSE.
+Local maint harness: HTTP fixture + Nmap against 127.0.0.1 for nmap-xyberpix offsec NSE.
 
 Requires a working `nmap` (PATH or NMAP_SELFTEST_BINARY). Passes --datadir to
 this repository root so fork scripts and nselib load.

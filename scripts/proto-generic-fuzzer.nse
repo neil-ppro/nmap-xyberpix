@@ -33,7 +33,7 @@ nmap -p 9999 --script proto-generic-fuzzer \
 ```
 ]]
 
-author = "nmap-ppro"
+author = "nmap-xyberpix"
 license = "Same as Nmap--See https://nmap.org/book/man-legal.html"
 categories = {"intrusive", "fuzzer"}
 

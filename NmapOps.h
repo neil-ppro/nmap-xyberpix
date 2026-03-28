@@ -286,11 +286,11 @@ class NmapOps {
   bool always_resolve;
   bool resolve_all;
   bool unique;
-  /* nmap-ppro: scan policy helpers */
+  /* nmap-xyberpix: scan policy helpers */
   bool adaptive_rate;  /* --adaptive-rate */
   bool auto_hostgroup;  /* --auto-hostgroup */
   bool ipv6_robust;     /* --ipv6-robust */
-  /* nmap-ppro: spread -D decoy sends in time; optional uniform jitter in [1,usec] */
+  /* nmap-xyberpix: spread -D decoy sends in time; optional uniform jitter in [1,usec] */
   int decoy_stagger_usec;
   bool decoy_stagger_random;
   char *dns_servers;
@@ -317,7 +317,7 @@ class NmapOps {
   char *exclude_portlist; /* exclude-ports list specified by user */
 
   nsock_proxychain proxy_chain;
-  /* nmap-ppro: optional SSH jump host; ssh_bounce.cc spawns ssh -D and sets proxy_chain */
+  /* nmap-xyberpix: optional SSH jump host; ssh_bounce.cc spawns ssh -D and sets proxy_chain */
   char *ssh_bounce;
   unsigned short ssh_bounce_remote_port;
   bool discovery_ignore_rst; /* host discovery should not consider TCP RST packet responses as a live asset */

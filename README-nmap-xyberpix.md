@@ -1,15 +1,15 @@
-# nmap-ppro
+# nmap-xyberpix
 
-This repository is **nmap-ppro**: upstream **Nmap** plus patches and add-ons aimed at operators, SIEM pipelines, and controlled automation (including AI agents via MCP). Licensing is unchanged from Nmap; see [Nmap Copyright and Licensing](https://nmap.org/book/man-legal.html).
+This repository is **nmap-xyberpix**: upstream **Nmap** plus patches and add-ons aimed at operators, SIEM pipelines, and controlled automation (including AI agents via MCP). Licensing is unchanged from Nmap; see [Nmap Copyright and Licensing](https://nmap.org/book/man-legal.html).
 
 ## What differs from upstream Nmap
 
-High-level additions (see [CHANGELOG](CHANGELOG) for `[nmap-ppro]` and `[SIEM]` entries):
+High-level additions (see [CHANGELOG](CHANGELOG) for `[nmap-xyberpix]` and `[SIEM]` entries):
 
 | Area | Summary |
 |------|---------|
 | **SIEM / analytics** | `--siem-log`, `--siem-syslog`, `--siem-tag`: newline-delimited JSON events (`schema_version`, `ts`, `event`, …). Schema: [docs/SIEM-NDJSON-SCHEMA.md](docs/SIEM-NDJSON-SCHEMA.md); examples: [docs/examples/siem/README.md](docs/examples/siem/README.md). |
-| **Scan policy & tuning** | Flags such as `--safe-profile`, `--ipv6-robust`, `--adaptive-rate`, `--auto-hostgroup`; decoy timing via `--decoy-stagger` / `--decoy-stagger-random` (see [docs/IDS-EVASION-NMAP-PPRO.md](docs/IDS-EVASION-NMAP-PPRO.md)). **`--ssh-bounce`** runs OpenSSH `-D` and relays version/NSE TCP like `--proxies` SOCKS4 (Unix; see man page). |
+| **Scan policy & tuning** | Flags such as `--safe-profile`, `--ipv6-robust`, `--adaptive-rate`, `--auto-hostgroup`; decoy timing via `--decoy-stagger` / `--decoy-stagger-random` (see [docs/IDS-EVASION-NMAP-XYBERPIX.md](docs/IDS-EVASION-NMAP-XYBERPIX.md)). **`--ssh-bounce`** runs OpenSSH `-D` and relays version/NSE TCP like `--proxies` SOCKS4 (Unix; see man page). |
 | **TLS / service metadata** | Optional TLS fingerprint material in service scan XML when OpenSSL is enabled. |
 | **Zenmap** | Profile editor tab for SIEM and scan-policy options so saved profiles match the fork’s CLI. Install/GTK notes: [docs/ZENMAP-INSTALL.md](docs/ZENMAP-INSTALL.md). |
 | **MCP server** | Python stdio server in [mcp-nmap-server/](mcp-nmap-server/) (`nmap_dry_run`, `nmap_run_scan`, offsec presets, etc.) with a default **safe mode** for options and targets. |
@@ -51,11 +51,11 @@ Point `NMAP_MCP_BINARY` at your built `nmap` if it is not on `PATH`; for offsec 
 | **Offsec NSE** index, script-args, MCP allowlist, maintainer checklist | [docs/nse-offsec-scripts.md](docs/nse-offsec-scripts.md) |
 | **SIEM NDJSON** fields and `schema_version` policy | [docs/SIEM-NDJSON-SCHEMA.md](docs/SIEM-NDJSON-SCHEMA.md) |
 | **SIEM** jq / Splunk / Elastic examples | [docs/examples/siem/README.md](docs/examples/siem/README.md) |
-| **Decoy / IDS-oriented** nmap-ppro behavior | [docs/IDS-EVASION-NMAP-PPRO.md](docs/IDS-EVASION-NMAP-PPRO.md) |
+| **Decoy / IDS-oriented** nmap-xyberpix behavior | [docs/IDS-EVASION-NMAP-XYBERPIX.md](docs/IDS-EVASION-NMAP-XYBERPIX.md) |
 | **Merging upstream** Nmap | [docs/UPSTREAM-MERGE.md](docs/UPSTREAM-MERGE.md) |
 | **Fork file boundary** (merge hints) | [maint/FORK-FILES.md](maint/FORK-FILES.md) |
 
-Illustrative PoCs live under [docs/security/](docs/security/). CI (`.github/workflows/nmap-ppro-checks.yml`) runs MCP **pytest on Ubuntu and Windows**, maintainer sync scripts, a **`nmap.cc` long-options baseline** (fail on new `--long-opt` until the baseline is refreshed and MCP safe mode is reviewed), and **SIEM smoke** using a built `nmap` binary passed between jobs via artifacts. **`maint/check_zenmap_siem_flags.py`** ties **Zenmap** `LONG_OPTIONS` and **`profile_editor.xml`** (SIEM tab tooltips) to the same long-option list as `nmap.cc`, modulo **`maint/data/zenmap-nmap-longopt-exceptions.txt`** for GUI omissions.
+Illustrative PoCs live under [docs/security/](docs/security/). CI (`.github/workflows/nmap-xyberpix-checks.yml`) runs MCP **pytest on Ubuntu and Windows**, maintainer sync scripts, a **`nmap.cc` long-options baseline** (fail on new `--long-opt` until the baseline is refreshed and MCP safe mode is reviewed), and **SIEM smoke** using a built `nmap` binary passed between jobs via artifacts. **`maint/check_zenmap_siem_flags.py`** ties **Zenmap** `LONG_OPTIONS` and **`profile_editor.xml`** (SIEM tab tooltips) to the same long-option list as `nmap.cc`, modulo **`maint/data/zenmap-nmap-longopt-exceptions.txt`** for GUI omissions.
 
 ## Upstream relationship
 
