@@ -6863,7 +6863,7 @@ fi
 
 
 
-# nmap-xyberpix: nfuzz — raw IPv4 packet fuzzer (Unix; not MinGW)
+# nmap-xyberpix: nfuzz — raw IPv4 packet fuzzer (Unix; not MinGW); links in-tree libpcap for --pcap
 
 # Check whether --with-nfuzz was given.
 if test ${with_nfuzz+y}

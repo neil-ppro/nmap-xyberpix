@@ -15,7 +15,7 @@ High-level additions (see [CHANGELOG](CHANGELOG) for `[nmap-xyberpix]` and `[SIE
 | **MCP server** | Python stdio server in [mcp-nmap-server/](mcp-nmap-server/) (`nmap_dry_run`, `nmap_run_scan`, offsec presets, etc.) with a default **safe mode** for options and targets. |
 | **NSE (offsec-oriented)** | Additional scripts and `nselib` helpers (e.g. `http_offsec`); use only on **authorized** targets. Overview: [docs/nse-offsec-scripts.md](docs/nse-offsec-scripts.md). |
 | **Developer tooling** | Optional sanitizers, clang-tidy helpers, and maint scripts under `maint/` (see CHANGELOG). |
-| **nfuzz** | Optional **`nfuzz`** binary: raw IPv4 datagram mutation and/or **`--http-daemon`** (serves new fuzzed HTML/JS per request for browser testing; loopback bind by default). **`--auto-browser`** can launch a supervised headless browser against the fuzz URL. Requires `--authorized` / `NFUZZ_AUTHORIZED=1`; raw mode usually needs root. Built by default on Unix; `./configure --without-nfuzz` to skip. See **`nfuzz(1)`** and [docs/security/SECURITY-OVERVIEW.md](docs/security/SECURITY-OVERVIEW.md). |
+| **nfuzz** | Optional **`nfuzz`** binary: raw IPv4 mutation from hex, **`--pcap`** (rdpcap-style), or **`--template`** (ICMP/UDP/TCP with optional IP/TCP options), **`--frag-mtu`**, and/or **`--http-daemon`** (serves new fuzzed HTML/JS per request for browser testing; loopback bind by default). **`--auto-browser`** can launch a supervised headless browser against the fuzz URL. Requires `--authorized` / `NFUZZ_AUTHORIZED=1`; raw mode usually needs root. Built by default on Unix; `./configure --without-nfuzz` to skip. See **`nfuzz(1)`** and [docs/security/SECURITY-OVERVIEW.md](docs/security/SECURITY-OVERVIEW.md). |
 
 ## Build and install
 

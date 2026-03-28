@@ -1,5 +1,19 @@
 #Nmap Changelog ($Id$); -*-text-*-
 
+o [nmap-xyberpix] nfuzz 0.6: **--pcap** / **--pcap-index** load a base IPv4
+  datagram from a capture file (libpcap; Ethernet w/ optional 802.1Q, DLT_RAW,
+  DLT_NULL/DLT_LOOP, Linux SLL). **--template** supports **--ip-options-hex**,
+  **--tcp-options-hex**, and **--tcp-mss** (MSS option before custom TCP options).
+  nfuzz links the in-tree **libpcap** static library; build uses **-D_GNU_SOURCE**
+  for portable pcap typedefs. Documented in nfuzz(1).
+
+o [nmap-xyberpix] nfuzz 0.5: raw mode gains Scapy-inspired **--template**
+  stacks (icmp-echo, udp, tcp-syn) with **--sport/--dport**, **--payload-len**,
+  **--icmp-id/--icmp-seq**, **--tcp-win**; default mutable region is L4 payload
+  only for templates. **--fix-l4** now corrects ICMPv4 checksums. Optional
+  **--frag-mtu** emits RFC 791 IPv4 fragments when the datagram exceeds the limit.
+  Documented in nfuzz(1) with a pointer to the Scapy project.
+
 o [nmap-xyberpix] Fork branding: standardize on the **nmap-xyberpix** name and
   `[nmap-xyberpix]` CHANGELOG tag (replacing nmap-ppro). Renamed
   `README-nmap-xyberpix.md`, `docs/IDS-EVASION-NMAP-XYBERPIX.md`, and CI workflow

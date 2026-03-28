@@ -9,7 +9,9 @@ nfuzz \- raw IPv4 packet mutation harness and optional HTTP browser\-fuzz server
 .IR ADDR ]
 .RB [ \-\-hex
 .IR HEX | \-\-hex\-file
-.IR PATH ]
+.IR PATH | \-\-pcap
+.IR PATH | \-\-template
+.IR NAME ]
 .RI [ options ]
 .SS HTTP browser fuzz daemon
 .B nfuzz
@@ -37,8 +39,18 @@ or set
 in the environment before the tool will run.
 .PP
 Raw mode: the base packet is hexadecimal (see
-.BR \-\-hex " or " \-\-hex\-file ).
-The IPv4 version nibble must be 4. Typical use requires superuser privileges.
+.BR \-\-hex " or " \-\-hex\-file ),
+the
+.IR N th
+IPv4 datagram from a
+.BR \-\-pcap
+file (via libpcap, similar to Scapy
+.BR rdpcap ),
+or a built\-in IPv4 stack chosen with
+.BR \-\-template
+.RB ( icmp\-echo ", " udp ", " tcp\-syn ;
+layered similarly to interactive packet tools such as Scapy).
+The IPv4 version nibble must be 4 for hex input. Typical use requires superuser privileges.
 HTTP mode does not require raw socket privileges.
 .PP
 In the foreground (without
@@ -165,6 +177,77 @@ for free\-form hex files).
 Read base datagram from a file; non\-hex characters are treated as whitespace
 and ignored.
 .TP
+.BI \-\-pcap " PATH"
+Use the
+.IR N th
+IPv4 packet in a capture file as the base datagram (see
+.BR \-\-pcap\-index ).
+Link\-layer types supported include Ethernet (incl. 802.1Q),
+.BR DLT_RAW ,
+.BR DLT_NULL / DLT_LOOP ,
+and Linux
+.BR DLT_LINUX_SLL .
+Mutually exclusive with
+.BR \-\-hex ", " \-\-hex\-file ", and " \-\-template .
+.TP
+.BI \-\-pcap\-index " N"
+Select which IPv4 packet to use (1 = first IPv4 packet in file; default 1).
+.TP
+.BI \-\-template " NAME"
+Build a minimal IPv4 datagram without hex:
+.BR icmp\-echo ", " udp ", or " tcp\-syn .
+Mutations default to the L4 payload region (after the fixed ICMP/UDP/TCP header).
+.TP
+.BI \-\-ip\-options\-hex " HEX"
+Append raw IPv4 option bytes after the 20\-byte header (requires
+.BR \-\-template ).
+The implementation pads with IP NOP (1) to a 4\-byte boundary; at most 40 option bytes after padding.
+.TP
+.BI \-\-tcp\-options\-hex " HEX"
+Append raw TCP option bytes after the 20\-byte TCP header (requires
+.BR \-\-template " tcp\-syn" ).
+Padded with TCP NOP (1) to a 4\-byte boundary; at most 40 option bytes after padding.
+.TP
+.BI \-\-tcp\-mss " N"
+Prepend a standard MSS option (kind 2, length 4) before any
+.BR \-\-tcp\-options\-hex
+bytes
+.RB ( tcp\-syn
+only).
+.TP
+.BI \-\-sport " N"
+.TP
+.BI \-\-dport " N"
+Source and destination ports for
+.B udp
+and
+.B tcp\-syn
+templates (0 selects built\-in defaults).
+.TP
+.BI \-\-payload\-len " N"
+L4 payload size in bytes after the template header (0 uses defaults: 32 for ICMP echo, 16 for UDP, 0 for TCP SYN).
+.TP
+.BI \-\-icmp\-id " N"
+.TP
+.BI \-\-icmp\-seq " N"
+ICMP echo identifier and sequence
+.RB ( icmp\-echo
+template only).
+.TP
+.BI \-\-tcp\-win " N"
+TCP window for
+.B tcp\-syn
+(0 means 8192).
+.TP
+.BI \-\-frag\-mtu " BYTES"
+If the datagram is larger than
+.IR BYTES ,
+emit RFC 791 IPv4 fragments that each fit within
+.IR BYTES .
+0 disables fragmentation (default). With
+.BR \-r ","
+rate limiting applies once per logical packet after all fragments are sent.
+.TP
 .BI \-c ", " \-\-count " N"
 Number of packets to send (default 1, maximum 10,000,000).
 .TP
@@ -197,7 +280,7 @@ Recompute IPv4 header checksum (default: on).
 .B \-\-no\-fix\-checksums
 .TP
 .B \-\-fix\-l4
-Recompute UDP or TCP checksum when protocol is 17 or 6.
+Recompute UDP, TCP, or ICMPv4 checksum when the IPv4 protocol field matches.
 .TP
 .BR \-h ", " \-\-help
 Print help and exit.
@@ -221,6 +304,11 @@ is not given.
 .SH EXIT STATUS
 0 on success, non\-zero on usage errors, privilege/socket failures, or send errors.
 .SH NOTES
+Layered IPv4 templates and optional fragmentation follow the same composition ideas as
+the Scapy project
+.RB ( https://github.com/secdev/scapy ),
+implemented here as a small single\-file C tool without a Python runtime.
+.PP
 .B nfuzz
 does not perform IPv6 or link\-layer framing in the raw path. The HTTP server is
 IPv4 only and is intentionally minimal (no TLS). It is not a replacement for

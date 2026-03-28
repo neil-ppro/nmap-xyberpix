@@ -10,6 +10,10 @@
  * Nmap and nfuzz are (C) Nmap Software LLC — see LICENSE in the distribution.
  */
 
+/* libpcap uses BSD u_int/u_char; Darwin needs this before POSIX limits visibility. */
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+#define _DARWIN_C_SOURCE 1
+#endif
 #define _POSIX_C_SOURCE 200809L
 #define _DEFAULT_SOURCE 1
 
@@ -33,6 +37,9 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+
+/* libpcap headers expect BSD u_int / u_char (see pcap(3pcap)). */
+#include <pcap.h>
 
 #ifndef IPPROTO_IP
 #define IPPROTO_IP 0
@@ -60,6 +67,15 @@
 #define NFUZZ_BROWSER_MAX_EXTRA 32
 #define NFUZZ_BROWSER_CMD_MAX 512
 #define NFUZZ_BROWSER_URL_MAX 768
+
+/* IPv4 "more fragments" flag (high byte of frag offset field, RFC 791). */
+#ifndef NFUZZ_IP_MF
+#define NFUZZ_IP_MF 0x2000
+#endif
+
+#ifndef TH_SYN
+#define TH_SYN 0x02
+#endif
 
 struct nfuzz_http_browser_opts {
   int auto_browser;
@@ -799,9 +815,22 @@ static void usage(FILE *fp, const char *argv0)
 "  --src ADDR                Patch IPv4 header source field (optional).\n"
 "  --patch-addresses         Apply --src/--dst to bytes 12-19 of the IP header.\n"
 "\n"
-"Payload:\n"
+"Payload (one of):\n"
 "  --hex-file PATH           Base datagram as hex (whitespace ignored).\n"
 "  --hex STRING              Base datagram as hex string.\n"
+"  --pcap PATH               Base datagram from IPv4 inside capture (libpcap; like Scapy rdpcap).\n"
+"  --pcap-index N            Use Nth IPv4 packet in file (1-based, default 1).\n"
+"  --template NAME           Built-in IPv4 stack (no hex): icmp-echo | udp | tcp-syn\n"
+"                            (Scapy-style defaults; use --payload-len, ports, etc.).\n"
+"  --sport N / --dport N     Source/dest port for udp/tcp-syn templates (0=default).\n"
+"  --payload-len N           L4 payload bytes after fixed header (0=defaults: icmp 32, udp 16, tcp 0).\n"
+"  --icmp-id N  --icmp-seq N ICMP echo identifier / sequence (icmp-echo template).\n"
+"  --tcp-win N               TCP window for tcp-syn (0=8192).\n"
+"  --ip-options-hex HEX      Raw IPv4 options after 20-byte header (multiple of 4 after NOP pad);\n"
+"                            requires --template. Max 40 option bytes.\n"
+"  --tcp-options-hex HEX     Raw TCP options after 20-byte header (tcp-syn only); padded with NOP to\n"
+"                            multiple of 4. Combine with --tcp-mss (MSS option emitted first).\n"
+"  --tcp-mss N               Append RFC 793 MSS option (tcp-syn template only).\n"
 "\n"
 "Fuzzing:\n"
 "  -c, --count N             Packets to send (default 1, max %lu).\n"
@@ -809,7 +838,8 @@ static void usage(FILE *fp, const char *argv0)
 "  -s, --seed N              RNG seed (default: time).\n"
 "  -S, --strategy NAME       bitflip | random_byte | inc_byte | dec_byte |\n"
 "                            truncate | append_random | shuffle_block (default: bitflip).\n"
-"  -m, --mutable-off O       Start of mutable region (byte offset, default: after IP hdr).\n"
+"  -m, --mutable-off O       Mutable region start (default: after IP header for hex;\n"
+"                            after L4 header for --template).\n"
 "  -l, --mutable-len L       Length of mutable region (default: through end of buffer).\n"
 "\n"
 "Checksums / lengths:\n"
@@ -817,7 +847,9 @@ static void usage(FILE *fp, const char *argv0)
 "  --no-fix-ip-len\n"
 "  --fix-checksums           Recompute IPv4 header checksum (default on).\n"
 "  --no-fix-checksums\n"
-"  --fix-l4                  Recompute UDP (17) or TCP (6) checksum if present.\n"
+"  --fix-l4                  Recompute UDP, TCP, or ICMPv4 checksum if present.\n"
+"  --frag-mtu BYTES          If datagram exceeds BYTES, IPv4-fragment to fit (0=off).\n"
+"                            -r/--rate sleeps once per logical packet (after all frags).\n"
 "\n"
 "Misc:\n"
 "  -h, --help                This help.\n"
@@ -836,7 +868,7 @@ static void usage(FILE *fp, const char *argv0)
 
 static const char *version_string(void)
 {
-  return "nfuzz (nmap-xyberpix) 0.4";
+  return "nfuzz (nmap-xyberpix) 0.6";
 }
 
 static int xtoi(int c)
@@ -976,6 +1008,17 @@ static void fix_udp_tcp_checksum(unsigned char *pkt, int len)
     return;
   uint8_t proto = pkt[9];
   int l4len = len - (int)ihl;
+  if (l4len < 4)
+    return;
+
+  if (proto == IPPROTO_ICMP) {
+    pkt[ihl + 2] = pkt[ihl + 3] = 0;
+    uint16_t c = in_cksum(pkt + ihl, (size_t)l4len);
+    pkt[ihl + 2] = (unsigned char)((c >> 8) & 0xff);
+    pkt[ihl + 3] = (unsigned char)(c & 0xff);
+    return;
+  }
+
   if (l4len < 8)
     return;
 
@@ -1023,6 +1066,405 @@ static int open_raw_socket(void)
     return -1;
   }
   return fd;
+}
+
+/* First byte past L4 header suitable for mutation (fixed hdr sizes for templates). */
+static int nfuzz_payload_offset(const unsigned char *pkt, int len)
+{
+  unsigned ihl = ip_header_len(pkt, len);
+  if (ihl < 20 || (int)ihl + 1 > len)
+    return -1;
+  uint8_t p = pkt[9];
+  if (p == IPPROTO_ICMP)
+    return (int)ihl + 8;
+  if (p == IPPROTO_UDP)
+    return (int)ihl + 8;
+  if (p == IPPROTO_TCP) {
+    if (len < (int)ihl + 20)
+      return -1;
+    unsigned thl = (unsigned)(pkt[ihl + 12] >> 4) * 4u;
+    if (thl < 20u)
+      thl = 20u;
+    if ((int)(ihl + thl) > len)
+      return -1;
+    return (int)ihl + (int)thl;
+  }
+  return -1;
+}
+
+/* Scapy-style stacked IPv4 + ICMP echo / UDP / TCP-SYN; optional IP/TCP options. */
+static int build_ipv4_template(unsigned char *out, int outmax, const char *tpl,
+    struct in_addr dst, const struct in_addr *src, int have_src, uint16_t sport,
+    uint16_t dport, unsigned payload_len, uint16_t icmp_id, uint16_t icmp_seq,
+    uint16_t tcp_win, const unsigned char *ip_opts, unsigned ip_opt_len,
+    const unsigned char *tcp_opts, unsigned tcp_opt_len, uint32_t *rng)
+{
+  if (ip_opt_len % 4 != 0 || ip_opt_len > 40)
+    return -1;
+  unsigned ip_hlen = 20 + ip_opt_len;
+  if (ip_hlen > 60)
+    return -1;
+  unsigned ihl_words = ip_hlen / 4;
+  if (ihl_words < 5 || ihl_words > 15)
+    return -1;
+
+  unsigned char sip[4];
+  unsigned char dip[4];
+  memcpy(dip, &dst.s_addr, 4);
+  if (have_src && src != NULL)
+    memcpy(sip, &src->s_addr, 4);
+  else
+    memset(sip, 0, 4);
+
+  if (strcasecmp(tpl, "icmp-echo") == 0) {
+    if (tcp_opt_len != 0)
+      return -1;
+    if (payload_len == 0)
+      payload_len = 32;
+    unsigned icmp_total = 8 + payload_len;
+    unsigned tot = ip_hlen + icmp_total;
+    if ((int)tot > outmax || tot < ip_hlen + 8)
+      return -1;
+    memset(out, 0, tot);
+    out[0] = (unsigned char)(0x40 | (ihl_words & 0x0fu));
+    out[1] = 0;
+    out[2] = (unsigned char)(tot >> 8);
+    out[3] = (unsigned char)tot;
+    uint16_t ipid = (uint16_t)(prng32(rng) >> 16);
+    out[4] = (unsigned char)(ipid >> 8);
+    out[5] = (unsigned char)ipid;
+    out[8] = 64;
+    out[9] = IPPROTO_ICMP;
+    memcpy(out + 12, sip, 4);
+    memcpy(out + 16, dip, 4);
+    if (ip_opt_len != 0)
+      memcpy(out + 20, ip_opts, ip_opt_len);
+    unsigned io = ip_hlen;
+    out[io] = 8; /* echo request */
+    out[io + 1] = 0;
+    out[io + 4] = (unsigned char)(icmp_id >> 8);
+    out[io + 5] = (unsigned char)icmp_id;
+    out[io + 6] = (unsigned char)(icmp_seq >> 8);
+    out[io + 7] = (unsigned char)icmp_seq;
+    for (unsigned i = 0; i < payload_len; i++)
+      out[io + 8 + i] = (unsigned char)(prng32(rng) & 0xff);
+    return (int)tot;
+  }
+
+  if (strcasecmp(tpl, "udp") == 0) {
+    if (tcp_opt_len != 0)
+      return -1;
+    if (payload_len == 0)
+      payload_len = 16;
+    if (sport == 0)
+      sport = 45012;
+    if (dport == 0)
+      dport = 33434;
+    unsigned udp_len = 8 + payload_len;
+    unsigned tot = ip_hlen + udp_len;
+    if ((int)tot > outmax)
+      return -1;
+    memset(out, 0, tot);
+    out[0] = (unsigned char)(0x40 | (ihl_words & 0x0fu));
+    out[1] = 0;
+    out[2] = (unsigned char)(tot >> 8);
+    out[3] = (unsigned char)tot;
+    uint16_t ipid = (uint16_t)(prng32(rng) >> 16);
+    out[4] = (unsigned char)(ipid >> 8);
+    out[5] = (unsigned char)ipid;
+    out[8] = 64;
+    out[9] = IPPROTO_UDP;
+    memcpy(out + 12, sip, 4);
+    memcpy(out + 16, dip, 4);
+    if (ip_opt_len != 0)
+      memcpy(out + 20, ip_opts, ip_opt_len);
+    unsigned io = ip_hlen;
+    out[io + 0] = (unsigned char)(sport >> 8);
+    out[io + 1] = (unsigned char)sport;
+    out[io + 2] = (unsigned char)(dport >> 8);
+    out[io + 3] = (unsigned char)dport;
+    out[io + 4] = (unsigned char)(udp_len >> 8);
+    out[io + 5] = (unsigned char)udp_len;
+    for (unsigned i = 0; i < payload_len; i++)
+      out[io + 8 + i] = (unsigned char)(prng32(rng) & 0xff);
+    return (int)tot;
+  }
+
+  if (strcasecmp(tpl, "tcp-syn") == 0) {
+    if (tcp_opt_len % 4 != 0 || tcp_opt_len > 40)
+      return -1;
+    unsigned tcp_total = 20 + tcp_opt_len;
+    if (tcp_total > 60)
+      return -1;
+    if (sport == 0)
+      sport = 45012;
+    if (dport == 0)
+      dport = 443;
+    if (tcp_win == 0)
+      tcp_win = 8192;
+    unsigned tot = ip_hlen + tcp_total + payload_len;
+    if ((int)tot > outmax)
+      return -1;
+    memset(out, 0, tot);
+    out[0] = (unsigned char)(0x40 | (ihl_words & 0x0fu));
+    out[1] = 0;
+    out[2] = (unsigned char)(tot >> 8);
+    out[3] = (unsigned char)tot;
+    uint16_t ipid = (uint16_t)(prng32(rng) >> 16);
+    out[4] = (unsigned char)(ipid >> 8);
+    out[5] = (unsigned char)ipid;
+    out[8] = 64;
+    out[9] = IPPROTO_TCP;
+    memcpy(out + 12, sip, 4);
+    memcpy(out + 16, dip, 4);
+    if (ip_opt_len != 0)
+      memcpy(out + 20, ip_opts, ip_opt_len);
+    unsigned io = ip_hlen;
+    uint32_t seq = prng32(rng);
+    out[io + 0] = (unsigned char)(sport >> 8);
+    out[io + 1] = (unsigned char)sport;
+    out[io + 2] = (unsigned char)(dport >> 8);
+    out[io + 3] = (unsigned char)dport;
+    out[io + 4] = (unsigned char)(seq >> 24);
+    out[io + 5] = (unsigned char)(seq >> 16);
+    out[io + 6] = (unsigned char)(seq >> 8);
+    out[io + 7] = (unsigned char)seq;
+    out[io + 12] = (unsigned char)((tcp_total / 4u) << 4);
+    out[io + 13] = TH_SYN;
+    out[io + 14] = (unsigned char)(tcp_win >> 8);
+    out[io + 15] = (unsigned char)tcp_win;
+    if (tcp_opt_len != 0)
+      memcpy(out + io + 20, tcp_opts, tcp_opt_len);
+    for (unsigned i = 0; i < payload_len; i++)
+      out[io + tcp_total + i] = (unsigned char)(prng32(rng) & 0xff);
+    return (int)tot;
+  }
+
+  return -1;
+}
+
+/* Locate IPv4 datagram inside a captured frame; returns 0 on success. */
+static int nfuzz_pcap_frame_to_ipv4(int dlt, const unsigned char *data,
+    unsigned caplen, const unsigned char **ip, unsigned *ip_len)
+{
+  const unsigned char *p = data;
+  unsigned left = caplen;
+
+  if (dlt == DLT_EN10MB) {
+    if (left < 14)
+      return -1;
+    size_t off = 12;
+    uint16_t et = (uint16_t)((p[off] << 8) | p[off + 1]);
+    off = 14;
+    if (et == 0x8100) {
+      if (left < 18)
+        return -1;
+      et = (uint16_t)((p[16] << 8) | p[17]);
+      off = 18;
+    }
+    if (et != 0x0800)
+      return -1;
+    p += off;
+    left -= (unsigned)off;
+  } else if (dlt == DLT_RAW) {
+    /* raw IP */
+  } else if (dlt == DLT_NULL || dlt == DLT_LOOP) {
+    if (left < 4 + 20)
+      return -1;
+    uint32_t af;
+    memcpy(&af, p, sizeof(af));
+    /* BSD: AF_INET = 2 in host order; Linux loopback often LE 2 */
+    if (af != 2u && af != (uint32_t)htonl(2))
+      return -1;
+    p += 4;
+    left -= 4;
+  } else if (dlt == DLT_LINUX_SLL) {
+    if (left < 16)
+      return -1;
+    uint16_t et = (uint16_t)((p[14] << 8) | p[15]);
+    if (et != 0x0800)
+      return -1;
+    p += 16;
+    left -= 16;
+  } else {
+    return -1;
+  }
+
+  if (left < 20 || (p[0] >> 4) != 4)
+    return -1;
+  unsigned ihl = (unsigned)(p[0] & 0x0fu) * 4u;
+  if (ihl < 20 || ihl > left)
+    return -1;
+  int tot = (int)((p[2] << 8) | p[3]);
+  if (tot < (int)ihl)
+    return -1;
+  if (tot > (int)left)
+    tot = (int)left;
+  *ip = p;
+  *ip_len = (unsigned)tot;
+  return 0;
+}
+
+/*
+ * Load Nth IPv4 packet from pcap (1-based index). Supports Ethernet (incl. 802.1Q),
+ * DLT_RAW, DLT_NULL/DLT_LOOP, Linux cooked (SLL).
+ */
+static int nfuzz_pcap_load_ipv4(const char *path, long which,
+    unsigned char *out, int outmax)
+{
+  char errbuf[PCAP_ERRBUF_SIZE];
+  pcap_t *pch;
+
+  if (which < 1) {
+    fprintf(stderr, "nfuzz: --pcap-index must be >= 1\n");
+    return -1;
+  }
+
+  pch = pcap_open_offline(path, errbuf);
+  if (pch == NULL) {
+    fprintf(stderr, "nfuzz: pcap_open_offline %s: %s\n", path, errbuf);
+    return -1;
+  }
+
+  int dlt = pcap_datalink(pch);
+  long seen = 0;
+  struct pcap_pkthdr *hdr;
+  const u_char *pkt;
+  int rc;
+  int out_len = -1;
+
+  while ((rc = pcap_next_ex(pch, &hdr, &pkt)) == 1) {
+    const unsigned char *ip;
+    unsigned iplen;
+
+    if (hdr->caplen == 0)
+      continue;
+    if (nfuzz_pcap_frame_to_ipv4(dlt, pkt, hdr->caplen, &ip, &iplen) != 0)
+      continue;
+    if ((int)iplen < 20 || (int)iplen > outmax)
+      continue;
+    seen++;
+    if (seen < which)
+      continue;
+    memcpy(out, ip, iplen);
+    out_len = (int)iplen;
+    break;
+  }
+
+  if (rc == -1) {
+    fprintf(stderr, "nfuzz: pcap read error: %s\n", pcap_geterr(pch));
+    pcap_close(pch);
+    return -1;
+  }
+
+  pcap_close(pch);
+
+  if (out_len < 0) {
+    fprintf(stderr,
+        "nfuzz: no IPv4 packet #%ld in %s (datalink=%d)\n", which, path, dlt);
+    return -1;
+  }
+  return out_len;
+}
+
+/* If mtu>0 and len > mtu, split IPv4 payload into fragments (RFC 791 style). */
+static int ipv4_send_with_frag_mtu(int fd, const unsigned char *pkt, int len,
+    struct sockaddr_in *dst, unsigned mtu, uint32_t *rng)
+{
+  if (mtu == 0) {
+    ssize_t sent = sendto(fd, pkt, (size_t)len, 0, (struct sockaddr *)dst,
+        sizeof(*dst));
+    if (sent < 0) {
+      fprintf(stderr, "nfuzz: sendto: %s\n", strerror(errno));
+      return -1;
+    }
+    return 0;
+  }
+
+  unsigned ihl = ip_header_len(pkt, len);
+  if (ihl < 20 || (int)ihl >= len) {
+    fprintf(stderr, "nfuzz: invalid IPv4 header for fragmentation\n");
+    return -1;
+  }
+  if (mtu < ihl + 8) {
+    fprintf(stderr, "nfuzz: --frag-mtu too small (need at least IP header + 8)\n");
+    return -1;
+  }
+
+  int payload_len = len - (int)ihl;
+  if (payload_len <= 0) {
+    fprintf(stderr, "nfuzz: no payload to send\n");
+    return -1;
+  }
+
+  if ((unsigned)len <= mtu) {
+    ssize_t sent = sendto(fd, pkt, (size_t)len, 0, (struct sockaddr *)dst,
+        sizeof(*dst));
+    if (sent < 0) {
+      fprintf(stderr, "nfuzz: sendto: %s\n", strerror(errno));
+      return -1;
+    }
+    return 0;
+  }
+
+  unsigned chunk_max = (mtu - ihl) / 8u * 8u;
+  if (chunk_max == 0) {
+    fprintf(stderr, "nfuzz: --frag-mtu leaves no room for payload\n");
+    return -1;
+  }
+
+  uint16_t ident = (uint16_t)((pkt[4] << 8) | pkt[5]);
+  if (ident == 0)
+    ident = (uint16_t)(prng32(rng) >> 16);
+
+  unsigned char frag[NFUZZ_MAX_PACKET];
+  int off = 0;
+  while (off < payload_len) {
+    int remaining = payload_len - off;
+    int chunk;
+    int more;
+    if (remaining <= (int)chunk_max) {
+      chunk = remaining;
+      more = 0;
+    } else {
+      chunk = (int)chunk_max;
+      chunk -= chunk % 8;
+      if (chunk <= 0) {
+        fprintf(stderr, "nfuzz: fragmentation stuck (try larger --frag-mtu)\n");
+        return -1;
+      }
+      more = 1;
+    }
+    int frag_len = (int)ihl + chunk;
+    if (frag_len > (int)sizeof(frag)) {
+      fprintf(stderr, "nfuzz: fragment exceeds buffer\n");
+      return -1;
+    }
+    memcpy(frag, pkt, ihl);
+    memcpy(frag + ihl, pkt + ihl + (size_t)off, (size_t)chunk);
+    frag[4] = (unsigned char)(ident >> 8);
+    frag[5] = (unsigned char)ident;
+    uint16_t fo = (uint16_t)((unsigned)off / 8u);
+    if (more)
+      fo = (uint16_t)(fo | (uint16_t)NFUZZ_IP_MF);
+    frag[6] = (unsigned char)(fo >> 8);
+    frag[7] = (unsigned char)fo;
+    frag[2] = (unsigned char)((frag_len >> 8) & 0xff);
+    frag[3] = (unsigned char)(frag_len & 0xff);
+    frag[10] = frag[11] = 0;
+    uint16_t c = in_cksum(frag, ihl);
+    frag[10] = (unsigned char)((c >> 8) & 0xff);
+    frag[11] = (unsigned char)(c & 0xff);
+
+    ssize_t sent = sendto(fd, frag, (size_t)frag_len, 0,
+        (struct sockaddr *)dst, sizeof(*dst));
+    if (sent < 0) {
+      fprintf(stderr, "nfuzz: sendto (frag): %s\n", strerror(errno));
+      return -1;
+    }
+    off += chunk;
+  }
+  return 0;
 }
 
 static uint32_t prng32(uint32_t *s)
@@ -1147,6 +1589,19 @@ int main(int argc, char **argv)
   int fix_ip_len = 1;
   int fix_csum = 1;
   int fix_l4 = 0;
+  const char *template_name = NULL;
+  uint16_t tpl_sport = 0;
+  uint16_t tpl_dport = 0;
+  unsigned tpl_payload_len = 0;
+  unsigned tpl_icmp_id = 1;
+  unsigned tpl_icmp_seq = 0;
+  uint16_t tpl_tcp_win = 0;
+  unsigned frag_mtu = 0;
+  const char *pcap_file = NULL;
+  long pcap_index = 1;
+  const char *ip_opt_hex = NULL;
+  const char *tcp_opt_hex = NULL;
+  unsigned tcp_mss = 0;
 
   for (int i = 1; i < argc; i++) {
     const char *a = argv[i];
@@ -1280,6 +1735,140 @@ int main(int argc, char **argv)
         return 2;
       }
       hex_arg = argv[i];
+    } else if (strncmp(a, "--template=", 11) == 0) {
+      template_name = a + 11;
+    } else if (strcmp(a, "--template") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "nfuzz: missing value after %s\n", a);
+        return 2;
+      }
+      template_name = argv[i];
+    } else if (strncmp(a, "--sport=", 8) == 0) {
+      unsigned long v = strtoul(a + 8, NULL, 10);
+      if (v > 65535) {
+        fprintf(stderr, "nfuzz: --sport out of range\n");
+        return 2;
+      }
+      tpl_sport = (uint16_t)v;
+    } else if (strcmp(a, "--sport") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "nfuzz: missing value after %s\n", a);
+        return 2;
+      }
+      unsigned long v = strtoul(argv[i], NULL, 10);
+      if (v > 65535) {
+        fprintf(stderr, "nfuzz: --sport out of range\n");
+        return 2;
+      }
+      tpl_sport = (uint16_t)v;
+    } else if (strncmp(a, "--dport=", 8) == 0) {
+      unsigned long v = strtoul(a + 8, NULL, 10);
+      if (v > 65535) {
+        fprintf(stderr, "nfuzz: --dport out of range\n");
+        return 2;
+      }
+      tpl_dport = (uint16_t)v;
+    } else if (strcmp(a, "--dport") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "nfuzz: missing value after %s\n", a);
+        return 2;
+      }
+      unsigned long v = strtoul(argv[i], NULL, 10);
+      if (v > 65535) {
+        fprintf(stderr, "nfuzz: --dport out of range\n");
+        return 2;
+      }
+      tpl_dport = (uint16_t)v;
+    } else if (strncmp(a, "--payload-len=", 14) == 0) {
+      tpl_payload_len = (unsigned)strtoul(a + 14, NULL, 10);
+    } else if (strcmp(a, "--payload-len") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "nfuzz: missing value after %s\n", a);
+        return 2;
+      }
+      tpl_payload_len = (unsigned)strtoul(argv[i], NULL, 10);
+    } else if (strncmp(a, "--icmp-id=", 10) == 0) {
+      tpl_icmp_id = (unsigned)strtoul(a + 10, NULL, 10);
+    } else if (strcmp(a, "--icmp-id") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "nfuzz: missing value after %s\n", a);
+        return 2;
+      }
+      tpl_icmp_id = (unsigned)strtoul(argv[i], NULL, 10);
+    } else if (strncmp(a, "--icmp-seq=", 11) == 0) {
+      tpl_icmp_seq = (unsigned)strtoul(a + 11, NULL, 10);
+    } else if (strcmp(a, "--icmp-seq") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "nfuzz: missing value after %s\n", a);
+        return 2;
+      }
+      tpl_icmp_seq = (unsigned)strtoul(argv[i], NULL, 10);
+    } else if (strncmp(a, "--tcp-win=", 10) == 0) {
+      unsigned long v = strtoul(a + 10, NULL, 10);
+      if (v > 65535) {
+        fprintf(stderr, "nfuzz: --tcp-win out of range\n");
+        return 2;
+      }
+      tpl_tcp_win = (uint16_t)v;
+    } else if (strcmp(a, "--tcp-win") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "nfuzz: missing value after %s\n", a);
+        return 2;
+      }
+      unsigned long v = strtoul(argv[i], NULL, 10);
+      if (v > 65535) {
+        fprintf(stderr, "nfuzz: --tcp-win out of range\n");
+        return 2;
+      }
+      tpl_tcp_win = (uint16_t)v;
+    } else if (strncmp(a, "--frag-mtu=", 11) == 0) {
+      frag_mtu = (unsigned)strtoul(a + 11, NULL, 10);
+    } else if (strcmp(a, "--frag-mtu") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "nfuzz: missing value after %s\n", a);
+        return 2;
+      }
+      frag_mtu = (unsigned)strtoul(argv[i], NULL, 10);
+    } else if (strncmp(a, "--pcap=", 7) == 0) {
+      pcap_file = a + 7;
+    } else if (strcmp(a, "--pcap") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "nfuzz: missing value after %s\n", a);
+        return 2;
+      }
+      pcap_file = argv[i];
+    } else if (strncmp(a, "--pcap-index=", 13) == 0) {
+      pcap_index = strtol(a + 13, NULL, 10);
+    } else if (strcmp(a, "--pcap-index") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "nfuzz: missing value after %s\n", a);
+        return 2;
+      }
+      pcap_index = strtol(argv[i], NULL, 10);
+    } else if (strncmp(a, "--ip-options-hex=", 17) == 0) {
+      ip_opt_hex = a + 17;
+    } else if (strcmp(a, "--ip-options-hex") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "nfuzz: missing value after %s\n", a);
+        return 2;
+      }
+      ip_opt_hex = argv[i];
+    } else if (strncmp(a, "--tcp-options-hex=", 18) == 0) {
+      tcp_opt_hex = a + 18;
+    } else if (strcmp(a, "--tcp-options-hex") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "nfuzz: missing value after %s\n", a);
+        return 2;
+      }
+      tcp_opt_hex = argv[i];
+    } else if (strncmp(a, "--tcp-mss=", 10) == 0) {
+      tcp_mss = (unsigned)strtoul(a + 10, NULL, 10);
+    } else if (strcmp(a, "--tcp-mss") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "nfuzz: missing value after %s\n", a);
+        return 2;
+      }
+      tcp_mss = (unsigned)strtoul(argv[i], NULL, 10);
     } else if (strncmp(a, "--dst=", 6) == 0) {
       dst_str = a + 6;
     } else if (strcmp(a, "--dst") == 0) {
@@ -1424,9 +2013,123 @@ int main(int argc, char **argv)
     have_src = 1;
   }
 
+  if (tpl_icmp_id > 65535u || tpl_icmp_seq > 65535u) {
+    fprintf(stderr, "nfuzz: --icmp-id and --icmp-seq must be 0..65535\n");
+    return 2;
+  }
+  if (tpl_payload_len > NFUZZ_MAX_PACKET - 80) {
+    fprintf(stderr, "nfuzz: --payload-len too large\n");
+    return 2;
+  }
+  if (frag_mtu > 0 && frag_mtu < 28) {
+    fprintf(stderr, "nfuzz: --frag-mtu must be 0 (off) or at least 28\n");
+    return 2;
+  }
+  if (pcap_index < 1) {
+    fprintf(stderr, "nfuzz: --pcap-index must be >= 1\n");
+    return 2;
+  }
+  if (tcp_mss > 65535u) {
+    fprintf(stderr, "nfuzz: --tcp-mss out of range\n");
+    return 2;
+  }
+  if ((ip_opt_hex != NULL || tcp_opt_hex != NULL || tcp_mss > 0)
+      && template_name == NULL) {
+    fprintf(stderr,
+        "nfuzz: --ip-options-hex, --tcp-options-hex, and --tcp-mss require "
+        "--template\n");
+    return 2;
+  }
+  if ((tcp_opt_hex != NULL || tcp_mss > 0) && template_name != NULL
+      && strcasecmp(template_name, "tcp-syn") != 0) {
+    fprintf(stderr,
+        "nfuzz: --tcp-options-hex and --tcp-mss apply only to --template tcp-syn\n");
+    return 2;
+  }
+
+  uint32_t rng = (uint32_t)(seed_arg >= 0 ? seed_arg : (long)time(NULL) ^ (long)now_ns());
+  if (rng == 0)
+    rng = 0xdeadbeefu;
+
+  unsigned char ip_opt_buf[44];
+  unsigned ip_opt_n = 0;
+  unsigned char tcp_opt_buf[44];
+  unsigned tcp_opt_n = 0;
+
+  if (ip_opt_hex != NULL) {
+    int n = decode_hex_buffer(ip_opt_hex, strlen(ip_opt_hex), ip_opt_buf,
+        sizeof(ip_opt_buf));
+    if (n < 0) {
+      fprintf(stderr, "nfuzz: invalid --ip-options-hex\n");
+      return 2;
+    }
+    ip_opt_n = (unsigned)n;
+    while (ip_opt_n < sizeof(ip_opt_buf) && (ip_opt_n % 4u) != 0)
+      ip_opt_buf[ip_opt_n++] = 1; /* IP NOP */
+    if (ip_opt_n > 40u) {
+      fprintf(stderr, "nfuzz: --ip-options-hex too long after padding (max 40)\n");
+      return 2;
+    }
+  }
+
+  if (tcp_mss > 0) {
+    if (tcp_opt_n + 4u > sizeof(tcp_opt_buf)) {
+      fprintf(stderr, "nfuzz: TCP options overflow\n");
+      return 2;
+    }
+    tcp_opt_buf[tcp_opt_n++] = 2;
+    tcp_opt_buf[tcp_opt_n++] = 4;
+    tcp_opt_buf[tcp_opt_n++] = (unsigned char)((tcp_mss >> 8) & 0xff);
+    tcp_opt_buf[tcp_opt_n++] = (unsigned char)(tcp_mss & 0xff);
+  }
+  if (tcp_opt_hex != NULL) {
+    int n = decode_hex_buffer(tcp_opt_hex, strlen(tcp_opt_hex),
+        tcp_opt_buf + tcp_opt_n, sizeof(tcp_opt_buf) - tcp_opt_n);
+    if (n < 0) {
+      fprintf(stderr, "nfuzz: invalid --tcp-options-hex\n");
+      return 2;
+    }
+    tcp_opt_n += (unsigned)n;
+    while (tcp_opt_n < sizeof(tcp_opt_buf) && (tcp_opt_n % 4u) != 0)
+      tcp_opt_buf[tcp_opt_n++] = 1; /* TCP NOP */
+    if (tcp_opt_n > 40u) {
+      fprintf(stderr, "nfuzz: --tcp-options-hex too long after padding (max 40)\n");
+      return 2;
+    }
+  }
+
   unsigned char template[NFUZZ_MAX_PACKET];
   int tlen = 0;
-  if (hex_file) {
+  int from_template = 0;
+
+  if (template_name) {
+    if (hex_file != NULL || hex_arg != NULL || pcap_file != NULL) {
+      fprintf(stderr,
+          "nfuzz: --template is mutually exclusive with --hex, --hex-file, and "
+          "--pcap\n");
+      return 2;
+    }
+    from_template = 1;
+    tlen = build_ipv4_template(template, NFUZZ_MAX_PACKET, template_name, dst_addr,
+        have_src ? &src_patch : NULL, have_src, tpl_sport, tpl_dport,
+        tpl_payload_len, (uint16_t)tpl_icmp_id, (uint16_t)tpl_icmp_seq, tpl_tcp_win,
+        ip_opt_n > 0 ? ip_opt_buf : NULL, ip_opt_n,
+        tcp_opt_n > 0 ? tcp_opt_buf : NULL, tcp_opt_n, &rng);
+    if (tlen < 0) {
+      fprintf(stderr,
+          "nfuzz: unknown or invalid --template (try icmp-echo, udp, tcp-syn)\n");
+      return 2;
+    }
+  } else if (pcap_file != NULL) {
+    if (hex_file != NULL || hex_arg != NULL) {
+      fprintf(stderr,
+          "nfuzz: --pcap is mutually exclusive with --hex and --hex-file\n");
+      return 2;
+    }
+    tlen = nfuzz_pcap_load_ipv4(pcap_file, pcap_index, template, NFUZZ_MAX_PACKET);
+    if (tlen < 0)
+      return 2;
+  } else if (hex_file) {
     tlen = read_hex_file(hex_file, template, NFUZZ_MAX_PACKET);
     if (tlen < 0)
       return 2;
@@ -1437,7 +2140,8 @@ int main(int argc, char **argv)
       return 2;
     }
   } else {
-    fprintf(stderr, "nfuzz: provide --hex-file or --hex\n");
+    fprintf(stderr,
+        "nfuzz: provide --template, --pcap, --hex-file, or --hex (raw mode)\n");
     return 2;
   }
 
@@ -1459,10 +2163,6 @@ int main(int argc, char **argv)
     fprintf(stderr, "nfuzz: rate out of range\n");
     return 2;
   }
-
-  uint32_t rng = (uint32_t)(seed_arg >= 0 ? seed_arg : (long)time(NULL) ^ (long)now_ns());
-  if (rng == 0)
-    rng = 0xdeadbeefu;
 
   int fd = open_raw_socket();
   if (fd < 0) {
@@ -1490,7 +2190,19 @@ int main(int argc, char **argv)
     }
 
     unsigned ihl = ip_header_len(work, len);
-    int moff = (mut_off >= 0) ? (int)mut_off : (int)ihl;
+    int moff;
+    if (mut_off >= 0)
+      moff = (int)mut_off;
+    else if (from_template) {
+      int po = nfuzz_payload_offset(work, len);
+      if (po < 0) {
+        fprintf(stderr, "nfuzz: cannot derive mutable region for template\n");
+        close(fd);
+        return 2;
+      }
+      moff = po;
+    } else
+      moff = (int)ihl;
     int mlen;
     if (mut_len >= 0)
       mlen = (int)mut_len;
@@ -1535,10 +2247,7 @@ int main(int argc, char **argv)
     if (fix_l4)
       fix_udp_tcp_checksum(work, len);
 
-    ssize_t sent = sendto(fd, work, (size_t)len, 0,
-        (struct sockaddr *)&sin, sizeof(sin));
-    if (sent < 0) {
-      fprintf(stderr, "nfuzz: sendto: %s\n", strerror(errno));
+    if (ipv4_send_with_frag_mtu(fd, work, len, &sin, frag_mtu, &rng) != 0) {
       close(fd);
       return 1;
     }

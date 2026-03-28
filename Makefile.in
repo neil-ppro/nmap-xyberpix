@@ -376,9 +376,9 @@ build-ndiff: $(NDIFFDIR)/pyproject.toml $(NDIFFDIR)/Version.py
 build-nping: $(NPINGDIR)/Makefile build-nbase build-nsock build-netutil $(NPINGDIR)/nping.h @DNET_BUILD@ @PCAP_BUILD@
 	@cd $(NPINGDIR) && $(MAKE)
 
-build-nfuzz:
+build-nfuzz: build-pcap
 	@echo Compiling nfuzz
-	$(CC) $(CPPFLAGS) $(CFLAGS) -o nfuzz/nfuzz $(srcdir)/nfuzz/nfuzz.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) -D_GNU_SOURCE -o nfuzz/nfuzz $(srcdir)/nfuzz/nfuzz.c $(LIBPCAPDIR)/libpcap.a
 
 clean-nfuzz:
 	rm -f nfuzz/nfuzz
