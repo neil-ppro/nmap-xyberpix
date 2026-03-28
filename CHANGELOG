@@ -1,5 +1,19 @@
 #Nmap Changelog ($Id$); -*-text-*-
 
+o [nmap-ppro] Core/nsock: replace remaining unbounded sprintf with snprintf or
+  Snprintf in nsock peer address formatting, fallback strerror message,
+  reverse-DNS PTR assembly, TCP option string (MSS), and ICMP packet summary
+  lines (libnetutil).
+
+o [nmap-ppro] Nping: security-focused hardening outside HTTP stress: bounded
+  Snprintf for BPF filter assembly (no strlen underflow), echo-server BPF and
+  fallback IP string; ICMP advert entry parsing null-terminates split fields;
+  mode2Ascii and several utils use Snprintf; ARP/MAC display strings bounded;
+  echo passphrase strncpy always NUL-terminated; NEP echo reassembly validates
+  lengths vs lasthdr and plen; fixed getMACStr using wrong byte (mac[3]).
+  TCP/UDP packet info fixed wrong buffer on unknown src address family
+  (srcipstring vs dstipstring).
+
 o [nmap-ppro] Nping: optional authorized HTTP load/resilience mode --http-stress
   (parallel cleartext HTTP/1.1 over TCP via nsock), gated by --authorized-dos or
   NPING_DOS_AUTHORIZED=1, with --http-path, --http-method, --http-body,
@@ -8,7 +22,10 @@ o [nmap-ppro] Nping: optional authorized HTTP load/resilience mode --http-stress
   testing remains available via --tcp-connect with timing options. HTTP stress
   skips nsock pre-connect bind unless a source port or source IP is set, and uses
   correct sockaddr lengths when binding, avoiding connect failures on macOS and
-  similar stacks.
+  similar stacks. Hardened parsing: strict RFC 7230 method tokens, path and Host
+  header character rules (no CRLF/control injection), bounded lengths, safe
+  strdup ordering, snprintf truncation checks, header-end detection without
+  strstr on raw bytes, 64-bit attempt counters, and null-safe nsock callbacks.
 
 o [nmap-ppro] New options --ssh-bounce user@host and --ssh-bounce-port P: fork
   OpenSSH (-N -D on loopback) and set the SOCKS4 proxy chain used for version

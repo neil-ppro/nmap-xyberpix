@@ -47,6 +47,33 @@ struct hs_conn {
 
 static HttpStress *g_hs = NULL;
 
+/* Host header value must not contain CR/LF (injection). Mirrors NpingOps checks. */
+static bool hs_host_field_safe(const char *h) {
+  size_t n = 0;
+
+  if (h == NULL)
+    return false;
+  for (; *h != '\0'; h++) {
+    if (++n > 255u)
+      return false;
+    unsigned char c = (unsigned char)*h;
+    if (c == '\r' || c == '\n' || c < 0x20u || c >= 0x7fu)
+      return false;
+  }
+  return n > 0;
+}
+
+/* Find end of HTTP header block without relying on strstr across binary data. */
+static bool hs_headers_complete(const char *buf, int len) {
+  int i;
+
+  for (i = 0; i + 3 < len; i++) {
+    if (buf[i] == '\r' && buf[i + 1] == '\n' && buf[i + 2] == '\r' && buf[i + 3] == '\n')
+      return true;
+  }
+  return false;
+}
+
 HttpStress::HttpStress() {
   this->nsp = NULL;
   this->nsp_active = false;
@@ -76,6 +103,8 @@ static int build_http_request(hs_conn *c) {
     host = c->target->getTargetIPstr();
   if (!host || !host[0])
     return -1;
+  if (!hs_host_field_safe(host))
+    return -1;
 
   if (!path || path[0] != '/')
     return -1;
@@ -91,7 +120,9 @@ static int build_http_request(hs_conn *c) {
         "User-Agent: Nping-authorized-loadtest/1.0\r\n"
         "\r\n",
         meth, path, host, body_len);
-    if (hn < 0 || (size_t)hn + body_len + 1 >= HS_WBUF_SIZE)
+    if (hn < 0 || (size_t)hn >= sizeof(hdr))
+      return -1;
+    if ((size_t)hn + body_len + 1 >= HS_WBUF_SIZE)
       return -1;
     memcpy(c->wbuf, hdr, (size_t)hn);
     memcpy(c->wbuf + hn, body, body_len);
@@ -106,7 +137,7 @@ static int build_http_request(hs_conn *c) {
       "User-Agent: Nping-authorized-loadtest/1.0\r\n"
       "\r\n",
       meth, path, host);
-  if (n < 0 || n >= (int)HS_WBUF_SIZE)
+  if (n < 0 || (size_t)n >= HS_WBUF_SIZE)
     return -1;
   return n;
 }
@@ -129,7 +160,7 @@ bool HttpStress::more_to_send() {
       return false;
   }
   u32 cap = o.getPacketCount();
-  if (this->issued >= cap)
+  if (cap != 0xFFFFFFFFu && this->issued >= (u64)cap)
     return false;
   return true;
 }
@@ -197,14 +228,22 @@ void HttpStress::cb_timer_kick(nsock_pool nsp, nsock_event nse, void *userdata) 
 
 void HttpStress::cb_connect(nsock_pool nsp, nsock_event nse, void *userdata) {
   hs_conn *c = (hs_conn *)userdata;
+  HttpStress *hs = g_hs;
   enum nse_status status = nse_status(nse);
+
+  if (hs == NULL) {
+    if (c != NULL && c->nsi != NULL)
+      nsock_iod_delete(c->nsi, NSOCK_PENDING_SILENT);
+    free(c);
+    return;
+  }
 
   if (status != NSE_STATUS_SUCCESS || nse_type(nse) != NSE_TYPE_CONNECT) {
     nsock_iod_delete(c->nsi, NSOCK_PENDING_SILENT);
     free(c);
-    g_hs->inflight--;
-    g_hs->fail++;
-    g_hs->pump();
+    hs->inflight--;
+    hs->fail++;
+    hs->pump();
     return;
   }
 
@@ -212,9 +251,9 @@ void HttpStress::cb_connect(nsock_pool nsp, nsock_event nse, void *userdata) {
   if (c->wlen < 0) {
     nsock_iod_delete(c->nsi, NSOCK_PENDING_SILENT);
     free(c);
-    g_hs->inflight--;
-    g_hs->fail++;
-    g_hs->pump();
+    hs->inflight--;
+    hs->fail++;
+    hs->pump();
     return;
   }
 
@@ -223,34 +262,51 @@ void HttpStress::cb_connect(nsock_pool nsp, nsock_event nse, void *userdata) {
 
 void HttpStress::cb_write(nsock_pool nsp, nsock_event nse, void *userdata) {
   hs_conn *c = (hs_conn *)userdata;
+  HttpStress *hs = g_hs;
   enum nse_status status = nse_status(nse);
+
+  if (hs == NULL) {
+    if (c != NULL && c->nsi != NULL)
+      nsock_iod_delete(c->nsi, NSOCK_PENDING_SILENT);
+    free(c);
+    return;
+  }
 
   if (status != NSE_STATUS_SUCCESS) {
     nsock_iod_delete(c->nsi, NSOCK_PENDING_SILENT);
     free(c);
-    g_hs->inflight--;
-    g_hs->fail++;
-    g_hs->pump();
+    hs->inflight--;
+    hs->fail++;
+    hs->pump();
     return;
   }
 
-  o.stats.addSentPacket((u32)c->wlen);
+  if (c->wlen > 0)
+    o.stats.addSentPacket((u32)c->wlen);
   c->rl = 0;
   nsock_read(nsp, c->nsi, HttpStress::cb_read, HS_READ_CHUNK_TIMEOUT, c);
 }
 
 void HttpStress::cb_read(nsock_pool nsp, nsock_event nse, void *userdata) {
   hs_conn *c = (hs_conn *)userdata;
+  HttpStress *hs = g_hs;
   enum nse_status status = nse_status(nse);
   int nbytes = 0;
   char *data;
 
+  if (hs == NULL) {
+    if (c != NULL && c->nsi != NULL)
+      nsock_iod_delete(c->nsi, NSOCK_PENDING_SILENT);
+    free(c);
+    return;
+  }
+
   if (status != NSE_STATUS_SUCCESS) {
     nsock_iod_delete(c->nsi, NSOCK_PENDING_SILENT);
     free(c);
-    g_hs->inflight--;
-    g_hs->fail++;
-    g_hs->pump();
+    hs->inflight--;
+    hs->fail++;
+    hs->pump();
     return;
   }
 
@@ -258,9 +314,9 @@ void HttpStress::cb_read(nsock_pool nsp, nsock_event nse, void *userdata) {
   if (data == NULL || nbytes <= 0) {
     nsock_iod_delete(c->nsi, NSOCK_PENDING_SILENT);
     free(c);
-    g_hs->inflight--;
-    g_hs->fail++;
-    g_hs->pump();
+    hs->inflight--;
+    hs->fail++;
+    hs->pump();
     return;
   }
 
@@ -273,13 +329,13 @@ void HttpStress::cb_read(nsock_pool nsp, nsock_event nse, void *userdata) {
     c->rb[c->rl] = '\0';
   }
 
-  if (strstr(c->rb, "\r\n\r\n") != NULL || c->rl >= HS_READ_MAX) {
+  if (hs_headers_complete(c->rb, c->rl) || c->rl >= HS_READ_MAX) {
     o.stats.addRecvPacket((u32)(c->rl > 0 ? c->rl : 1));
-    g_hs->ok++;
+    hs->ok++;
     nsock_iod_delete(c->nsi, NSOCK_PENDING_SILENT);
     free(c);
-    g_hs->inflight--;
-    g_hs->pump();
+    hs->inflight--;
+    hs->pump();
     return;
   }
 
@@ -335,8 +391,13 @@ int HttpStress::start() {
   this->nsp_active = false;
   g_hs = NULL;
 
-  nping_print(QT_1, "HTTP stress: completed=%u failed=%u (connections attempted=%u)",
+#ifdef WIN32
+  nping_print(QT_1, "HTTP stress: completed=%I64u failed=%I64u (connections attempted=%I64u)",
       this->ok, this->fail, this->issued);
+#else
+  nping_print(QT_1, "HTTP stress: completed=%llu failed=%llu (connections attempted=%llu)",
+      (unsigned long long)this->ok, (unsigned long long)this->fail, (unsigned long long)this->issued);
+#endif
 
   return OP_SUCCESS;
 }

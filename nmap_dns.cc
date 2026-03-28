@@ -1643,7 +1643,7 @@ bool DNS::Factory::ipToPtr(const sockaddr_storage &ip, std::string &ptr)
     {
       const u32 ipv4_addr = ((const sockaddr_in *) &ip)->sin_addr.s_addr;
       const u8 *ipv4_c = (const u8 *)&ipv4_addr;
-      sprintf(tmp, "%d.%d.%d.%d", ipv4_c[3], ipv4_c[2], ipv4_c[1], ipv4_c[0]);
+      Snprintf(tmp, sizeof(tmp), "%d.%d.%d.%d", ipv4_c[3], ipv4_c[2], ipv4_c[1], ipv4_c[0]);
       ptr = tmp;
       ptr += IPV4_PTR_DOMAIN;
       break;
@@ -1655,7 +1655,7 @@ bool DNS::Factory::ipToPtr(const sockaddr_storage &ip, std::string &ptr)
       const u8 * ipv6 = s6.sin6_addr.s6_addr;
       for (short i=15; i>=0; --i)
       {
-        sprintf(tmp, "%02x", ipv6[i]);
+        Snprintf(tmp, sizeof(tmp), "%02x", ipv6[i]);
         ptr += '.';
         ptr += tmp[1];
         ptr += '.';

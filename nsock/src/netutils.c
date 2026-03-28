@@ -79,6 +79,7 @@
 #if HAVE_FCNTL_H
 #include <fcntl.h>
 #endif
+#include <stdio.h>
 #if HAVE_SYS_UN_H
 #include <sys/un.h>
 #endif
@@ -157,12 +158,12 @@ static char *get_addr_string(const struct sockaddr_storage *ss, size_t sslen) {
 
 #if HAVE_SYS_UN_H
   if (ss->ss_family == AF_UNIX) {
-    sprintf(buffer, "%s", get_unixsock_path(ss));
+    snprintf(buffer, sizeof(buffer), "%s", get_unixsock_path(ss));
     return buffer;
   }
 #endif
 
-  sprintf(buffer, "%s:%d", inet_ntop_ez(ss, sslen), get_port(ss));
+  snprintf(buffer, sizeof(buffer), "%s:%d", inet_ntop_ez(ss, sslen), get_port(ss));
   return buffer;
 }
 

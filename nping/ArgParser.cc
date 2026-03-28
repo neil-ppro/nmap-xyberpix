@@ -899,13 +899,13 @@ int ArgParser::parseArguments(int argc, char *argv[]) {
 /* HTTP STRESS OPTIONS ********************************************************/
     } else if (strcmp(long_options[option_index].name, "http-path") == 0 ){
         if (o.setStressHttpPath(optarg) != OP_SUCCESS)
-            nping_fatal(QT_3, "--http-path must be an absolute path starting with /.");
+            nping_fatal(QT_3, "--http-path must start with /, be at most 2048 bytes, and contain no spaces, control characters, or CRLF.");
     } else if (strcmp(long_options[option_index].name, "http-method") == 0 ){
         if (o.setStressHttpMethod(optarg) != OP_SUCCESS)
-            nping_fatal(QT_3, "Invalid --http-method.");
+            nping_fatal(QT_3, "Invalid --http-method (use an RFC 7230 token: letters, digits, and !#$%%&'*+.^_`|~- only; max 32 chars).");
     } else if (strcmp(long_options[option_index].name, "http-body") == 0 ){
         if (o.setStressHttpBody(optarg) != OP_SUCCESS)
-            nping_fatal(QT_3, "Invalid --http-body.");
+            nping_fatal(QT_3, "Invalid --http-body (max 8192 bytes).");
     } else if (strcmp(long_options[option_index].name, "stress-parallel") == 0 ){
         if (parse_u32(optarg, &aux32) != OP_SUCCESS || aux32<1)
             nping_fatal(QT_3, "--stress-parallel must be a positive integer.");
@@ -1195,9 +1195,9 @@ void ArgParser::printUsage(void){
 "                                     TCP/UDP/ICMP modes).\n"
 "AUTHORIZED HTTP LOAD TESTING (--http-stress):\n"
 "  --authorized-dos                 : Required gate; also NPING_DOS_AUTHORIZED=1.\n"
-"  --http-path <path>               : Absolute path (default /).\n"
-"  --http-method <method>           : Default GET.\n"
-"  --http-body <string>             : Optional body (Content-Length set).\n"
+"  --http-path <path>               : Absolute path (default /); max 2048 B, no SP/CTL/CRLF.\n"
+"  --http-method <method>           : RFC 7230 token (default GET); max 32 chars.\n"
+"  --http-body <string>             : Optional body (max 8192 B; Content-Length set).\n"
 "  --stress-parallel <n>            : Concurrent connections (1-4096, default 32).\n"
 "  --stress-duration <sec>          : Time limit; without -c, no connection count limit.\n"
 "TCP CONNECT MODE:\n"
@@ -1343,8 +1343,16 @@ int ArgParser::parseAdvertEntry(char *str, struct in_addr *addr, u32 *pref){
     nping_fatal(QT_3, "Invalid Router Advertising Entry specification: Bad syntax, comma cannot be placed at the end");
 
   /* Looks like at least the syntax is correct */
-  memcpy(first, str, aux-str);
-  memcpy(last, aux+1, len-(aux-str) );
+  {
+    size_t flen = (size_t)(aux - str);
+    size_t llen = len - flen - 1;
+    if (flen >= sizeof(first) || llen >= sizeof(last))
+      nping_fatal(QT_3, "Invalid Router Advertising Entry specification: internal length error");
+    memcpy(first, str, flen);
+    first[flen] = '\0';
+    memcpy(last, aux + 1, llen);
+    last[llen] = '\0';
+  }
 
   if( atoIP(first, &auxIP) == OP_FAILURE )
     nping_fatal(QT_3, "Invalid Router Advertising Entry specification: Unable to resolve %s", first);

@@ -805,7 +805,7 @@ int parseMAC(const char *txt, u8 *targetbuff){
 char *MACtoa(u8 *mac){
   static char macinfo[24];
   memset(macinfo, 0, 24);
-  sprintf(macinfo,"%02X:%02X:%02X:%02X:%02X:%02X",
+  Snprintf(macinfo, sizeof(macinfo), "%02X:%02X:%02X:%02X:%02X:%02X",
           mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]);
   return macinfo;
 } /* End of MACtoa() */
@@ -835,22 +835,21 @@ const char *arppackethdrinfo(const u8 *packet, u32 len, int detail){
   u32 *tIP = (u32 *)(packet+24);
 
   if( ntohs(*op) == 1 ){ /* ARP Request */
-    sprintf(protoinfo, "ARP who has %s? ", IPtoa(*tIP));
-    sprintf(protoinfo+strlen(protoinfo),"Tell %s", IPtoa(*sIP) );
+    Snprintf(protoinfo, sizeof(protoinfo), "ARP who has %s? Tell %s", IPtoa(*tIP), IPtoa(*sIP));
   }
   else if( ntohs(*op) == 2 ){ /* ARP Reply */
-    sprintf(protoinfo, "ARP reply %s ", IPtoa(*sIP));
-    sprintf(protoinfo+strlen(protoinfo),"is at %s", MACtoa(sMAC) );
+    Snprintf(protoinfo, sizeof(protoinfo), "ARP reply %s is at %s", IPtoa(*sIP), MACtoa(sMAC));
   }
   else if( ntohs(*op) == 3 ){ /* RARP Request */
-    sprintf(protoinfo, "RARP who is %s? Tell %s", MACtoa(tMAC), MACtoa(sMAC) );
+    Snprintf(protoinfo, sizeof(protoinfo), "RARP who is %s? Tell %s", MACtoa(tMAC), MACtoa(sMAC));
   }
   else if( ntohs(*op) ==4 ){ /* RARP Reply */
-    sprintf(protoinfo, "RARP reply: %s is at %s", MACtoa(tMAC), IPtoa(*tIP) );
+    Snprintf(protoinfo, sizeof(protoinfo), "RARP reply: %s is at %s", MACtoa(tMAC), IPtoa(*tIP));
   }
   else{
-    sprintf(protoinfo, "HTYPE:%04X PTYPE:%04X HLEN:%d PLEN:%d OP:%04X SMAC:%s SIP:%s DMAC:%s DIP:%s",
-            *htype, *ptype, *hlen, *plen, *op, MACtoa(sMAC), IPtoa(*sIP), MACtoa(tMAC), IPtoa(*tIP));
+    Snprintf(protoinfo, sizeof(protoinfo), "HTYPE:%04X PTYPE:%04X HLEN:%d PLEN:%d OP:%04X SMAC:%s SIP:%s DMAC:%s DIP:%s",
+            (unsigned int)ntohs(*htype), (unsigned int)ntohs(*ptype), (int)*hlen, (int)*plen,
+            (unsigned int)ntohs(*op), MACtoa(sMAC), IPtoa(*sIP), MACtoa(tMAC), IPtoa(*tIP));
   }
  return protoinfo;
 } /* End of arppackethdrinfo() */
@@ -917,10 +916,10 @@ int tcppackethdrinfo(const u8 *packet, size_t len, u8 *dstbuff, size_t dstlen,
     else if( s6->sin6_family==AF_INET6){
         inet_ntop(AF_INET6, &s6->sin6_addr, srcipstring, sizeof(srcipstring));
     }else{
-        sprintf(dstipstring, "unknown_addr_family");
+        Snprintf(srcipstring, sizeof(srcipstring), "%s", "unknown_addr_family");
     }
   }else{
-    sprintf(srcipstring, "this_host");
+    Snprintf(srcipstring, sizeof(srcipstring), "%s", "this_host");
   }
 
   /* Determine source IP address */
@@ -931,10 +930,10 @@ int tcppackethdrinfo(const u8 *packet, size_t len, u8 *dstbuff, size_t dstlen,
     else if( d6->sin6_family==AF_INET6){
         inet_ntop(AF_INET6, &d6->sin6_addr, dstipstring, sizeof(dstipstring));
     }else{
-        sprintf(dstipstring, "unknown_addr_family");
+        Snprintf(dstipstring, sizeof(dstipstring), "%s", "unknown_addr_family");
     }
   }else{
-    sprintf(dstipstring, "unknown_host");
+    Snprintf(dstipstring, sizeof(dstipstring), "%s", "unknown_host");
   }
 
   /* TCP Flags */
@@ -1032,10 +1031,10 @@ int udppackethdrinfo(const u8 *packet, size_t len, u8 *dstbuff, size_t dstlen,
     else if( s6->sin6_family==AF_INET6){
         inet_ntop(AF_INET6, &s6->sin6_addr, srcipstring, sizeof(srcipstring));
     }else{
-        sprintf(dstipstring, "unknown_addr_family");
+        Snprintf(srcipstring, sizeof(srcipstring), "%s", "unknown_addr_family");
     }
   }else{
-    sprintf(srcipstring, "this_host");
+    Snprintf(srcipstring, sizeof(srcipstring), "%s", "this_host");
   }
 
   /* Determine source IP address */
@@ -1046,10 +1045,10 @@ int udppackethdrinfo(const u8 *packet, size_t len, u8 *dstbuff, size_t dstlen,
     else if( d6->sin6_family==AF_INET6){
         inet_ntop(AF_INET6, &d6->sin6_addr, dstipstring, sizeof(dstipstring));
     }else{
-        sprintf(dstipstring, "unknown_addr_family");
+        Snprintf(dstipstring, sizeof(dstipstring), "%s", "unknown_addr_family");
     }
   }else{
-    sprintf(dstipstring, "unknown_host");
+    Snprintf(dstipstring, sizeof(dstipstring), "%s", "unknown_host");
   }
 
   if( detail == LOW_DETAIL ){

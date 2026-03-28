@@ -3103,9 +3103,9 @@ icmpbad:
       }
     } else {
       if (ping)
-        sprintf(icmpinfo,"type=%d/code=%d", ping->type, ping->code);
+        Snprintf(icmpinfo, sizeof(icmpinfo), "type=%d/code=%d", ping->type, ping->code);
       else
-        strncpy(icmpinfo,"type=?/code=?", sizeof(icmpinfo));
+        Snprintf(icmpinfo, sizeof(icmpinfo), "type=?/code=?");
 
       Snprintf(protoinfo, sizeof(protoinfo), "ICMP [%s > %s %s (%s) %s] IP [%s]",
         srchost, dsthost, icmptype, icmpinfo, icmpfields, ipinfo);

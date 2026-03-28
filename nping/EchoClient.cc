@@ -822,8 +822,22 @@ int EchoClient::nep_echoed_packet_handler(nsock_pool nsp, nsock_event nse, void 
         return OP_FAILURE;
     }
 
+    if (this->readbytes > (size_t)plen) {
+        nping_warning(DBG_1, "NEP echo: invalid state (reassembled length exceeds declared length).");
+        return OP_FAILURE;
+    }
+
+    if (plen < (int)STD_NEP_HEADER_LEN) {
+        nping_warning(DBG_1, "NEP: declared length too small.");
+        return OP_FAILURE;
+    }
+
     /* If we have read the whole packet, give it to nep_recv_echo for processing */
     if (plen==((int)this->readbytes+recvbytes)){
+        if ((size_t)this->readbytes + (size_t)recvbytes > sizeof(this->lasthdr)) {
+            nping_warning(DBG_1, "NEP echo: buffer overflow prevented.");
+            return OP_FAILURE;
+        }
         memcpy(this->lasthdr+this->readbytes, recvbuff, recvbytes);
         this->readbytes+=recvbytes;
         nping_print(DBG_4,"%s(): Received exact length (%d).", __func__, recvbytes);
@@ -835,6 +849,10 @@ int EchoClient::nep_echoed_packet_handler(nsock_pool nsp, nsock_event nse, void 
      * event with the exact amount of bytes, but may happen after that if we
      * received more data and one of the packets is incomplete */
     }else if(recvbytes<plen){
+        if ((size_t)recvbytes > sizeof(this->lasthdr)) {
+            nping_warning(DBG_1, "NEP echo: fragment larger than buffer.");
+            return OP_FAILURE;
+        }
         memcpy(this->lasthdr, recvbuff, recvbytes);
         this->readbytes=recvbytes;
         nping_print(DBG_4,"%s(): Missing %d bytes. Scheduled read operation for remaining bytes", __func__, plen-recvbytes);
@@ -842,11 +860,16 @@ int EchoClient::nep_echoed_packet_handler(nsock_pool nsp, nsock_event nse, void 
         return OP_SUCCESS;
 
     }else{ /* Received more than one packet */
+      size_t need = (size_t)plen - this->readbytes;
       nping_print(DBG_4,"%s(): Received more than one packet", __func__);
-      memcpy(this->lasthdr+this->readbytes, recvbuff, plen-this->readbytes);
+      if (need > (size_t)recvbytes || this->readbytes + need > sizeof(this->lasthdr)) {
+          nping_warning(DBG_1, "NEP echo: invalid multi-packet fragment sizes.");
+          return OP_FAILURE;
+      }
+      memcpy(this->lasthdr+this->readbytes, recvbuff, need);
       this->nep_recv_echo(this->lasthdr, plen);
-      recvbuff+=plen-this->readbytes;
-      recvbytes-=plen-this->readbytes;
+      recvbuff+=need;
+      recvbytes-=(int)need;
       this->readbytes=0;
       pkt_start=recvbuff;
     }
@@ -905,6 +928,11 @@ int EchoClient::nep_recv_std_header_handler(nsock_pool nsp, nsock_event nse, voi
         return OP_FAILURE;
     }
 
+    if (plen < (int)STD_NEP_HEADER_LEN) {
+        nping_warning(DBG_1, "NEP: declared length too small.");
+        return OP_FAILURE;
+    }
+
     /* If we have read the whole packet, give it to nep_recv_echo for processing */
     if (plen==recvbytes){
         nping_print(DBG_4,"%s(): Received exact length (%d).", __func__, recvbytes);
@@ -913,6 +941,10 @@ int EchoClient::nep_recv_std_header_handler(nsock_pool nsp, nsock_event nse, voi
         return OP_SUCCESS;
 
     }else if(recvbytes<plen){
+        if ((size_t)recvbytes > sizeof(this->lasthdr)) {
+            nping_warning(DBG_1, "NEP echo: fragment larger than buffer.");
+            return OP_FAILURE;
+        }
         memcpy(this->lasthdr, recvbuff, recvbytes);
         this->readbytes=recvbytes;
         nping_print(DBG_4,"%s(): Missing %d bytes. Scheduled read operation for remaining bytes", __func__, plen-recvbytes);
@@ -921,6 +953,10 @@ int EchoClient::nep_recv_std_header_handler(nsock_pool nsp, nsock_event nse, voi
 
     }else{ /* Received more than one packet */
       nping_print(DBG_4,"%s(): Received more than one packet", __func__);
+      if (plen > recvbytes) {
+          nping_warning(DBG_1, "NEP echo: invalid packet boundary.");
+          return OP_FAILURE;
+      }
       this->nep_recv_echo(recvbuff, plen);
       recvbuff+=plen;
       recvbytes-=plen;

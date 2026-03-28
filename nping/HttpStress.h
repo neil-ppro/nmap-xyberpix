@@ -32,9 +32,9 @@ class HttpStress {
     std::vector<std::pair<NpingTarget *, u16> > endpoints;
     size_t ep_cursor;
     u32 inflight;
-    u32 issued;
-    u32 ok;
-    u32 fail;
+    u64 issued;
+    u64 ok;
+    u64 fail;
     struct timeval time_end;
     bool use_time_limit;
 };

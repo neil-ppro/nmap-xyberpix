@@ -108,9 +108,9 @@ PROBE MODES:
                                      TCP/UDP/ICMP modes)\&.
 AUTHORIZED HTTP LOAD TESTING (\-\-http\-stress):
   \-\-authorized\-dos                 : Assert permission to run high\-volume tests (required with \-\-http\-stress)\&.
-  \-\-http\-path <path>               : Request path (must start with /; default /\&.)\&.
-  \-\-http\-method <method>           : HTTP method (default GET)\&.
-  \-\-http\-body <string>             : Optional request body (sets Content\-Length; use with POST/PUT, etc\&.)\&.
+  \-\-http\-path <path>               : Request path (must start with /; default /\&.); no spaces, control chars, or CRLF; max 2048 bytes\&.
+  \-\-http\-method <method>           : HTTP method token (default GET): letters, digits, and !#$%&'*+.^_`|~\- only; max 32 chars\&.
+  \-\-http\-body <string>             : Optional request body (sets Content\-Length; use with POST/PUT, etc\&.); max 8192 bytes\&.
   \-\-stress\-parallel <n>            : Concurrent connections (1\-4096; default 32)\&.
   \-\-stress\-duration <sec>         : Run for at most this many seconds; without \-c/\-\-count, connection cap is unlimited for the run\&.
   Environment NPING_DOS_AUTHORIZED=1 is equivalent to \-\-authorized\-dos\&. TLS/HTTPS is not supported in this mode\&.

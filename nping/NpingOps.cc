@@ -72,6 +72,53 @@
 #include "output.h"
 #include "common.h"
 #include <climits>
+#include <cstring>
+
+
+namespace {
+
+/* Limits and validation for --http-stress (CRLF / control-char injection defense). */
+enum {
+  HTTP_STRESS_PATH_MAX = 2048,
+  HTTP_STRESS_METHOD_MAX = 32,
+  HTTP_STRESS_BODY_MAX = 8192
+};
+
+static bool stress_http_path_chars_valid(const char *p) {
+  for (; *p != '\0'; p++) {
+    unsigned char c = (unsigned char)*p;
+    if (c == '\r' || c == '\n')
+      return false;
+    /* SP and CTL break the request line or headers. */
+    if (c == ' ' || c < 0x20u || c == 0x7fu)
+      return false;
+  }
+  return true;
+}
+
+/* RFC 7230: method = token (tchar characters only). */
+static bool stress_http_method_is_token(const char *m) {
+  size_t n = 0;
+
+  for (; *m != '\0'; m++) {
+    if (++n > (size_t)HTTP_STRESS_METHOD_MAX)
+      return false;
+    unsigned char c = (unsigned char)*m;
+    if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))
+      continue;
+    static const char tchar[] = "!#$%&'*+.^_`|~-";
+    const char *q;
+    for (q = tchar; *q != '\0'; q++) {
+      if ((unsigned char)*q == c)
+        break;
+    }
+    if (*q == '\0')
+      return false;
+  }
+  return n > 0;
+}
+
+} /* namespace */
 
 
 /******************************************************************************
@@ -392,35 +439,35 @@ char * NpingOps::mode2Ascii(int md) {
 
   switch( md ){
     case TCP_CONNECT:
-        sprintf(buff, "TCP-Connect");
+        Snprintf(buff, sizeof(buff), "%s", "TCP-Connect");
     break;
 
     case TCP:
-        sprintf(buff, "TCP");
+        Snprintf(buff, sizeof(buff), "%s", "TCP");
     break;
 
     case UDP:
-        sprintf(buff, "UDP");
+        Snprintf(buff, sizeof(buff), "%s", "UDP");
     break;
 
     case UDP_UNPRIV:
-        sprintf(buff, "UDP-Unprivileged");
+        Snprintf(buff, sizeof(buff), "%s", "UDP-Unprivileged");
     break;
 
     case ICMP:
-        sprintf(buff, "ICMP");
+        Snprintf(buff, sizeof(buff), "%s", "ICMP");
     break;
 
     case ARP:
-        sprintf(buff, "ARP");
+        Snprintf(buff, sizeof(buff), "%s", "ARP");
     break;
 
     case HTTP_STRESS:
-        sprintf(buff, "HTTP-Stress");
+        Snprintf(buff, sizeof(buff), "%s", "HTTP-Stress");
     break;
 
     default:
-        sprintf(buff, "Unknown mode");
+        Snprintf(buff, sizeof(buff), "%s", "Unknown mode");
     break;
  }
  return buff;
@@ -2220,7 +2267,10 @@ bool NpingOps::issetEchoPort(){
 
 
 int NpingOps::setEchoPassphrase(const char *str){
+  if (str == NULL)
+    return OP_FAILURE;
   strncpy(this->echo_passphrase, str, sizeof(echo_passphrase)-1);
+  this->echo_passphrase[sizeof(echo_passphrase) - 1] = '\0';
   this->echo_passphrase_set=true;
   return OP_SUCCESS;
 } /* End of setEchoPassphrase() */
@@ -2261,12 +2311,23 @@ bool NpingOps::isDosAuthorized(){
 
 
 int NpingOps::setStressHttpPath(const char *p){
+  char *copy;
+  size_t len;
+
   if(p==NULL || p[0]!='/')
+    return OP_FAILURE;
+  len = strlen(p);
+  if(len==0 || len > (size_t)HTTP_STRESS_PATH_MAX)
+    return OP_FAILURE;
+  if(!stress_http_path_chars_valid(p))
+    return OP_FAILURE;
+  copy = strdup(p);
+  if(copy==NULL)
     return OP_FAILURE;
   if(this->stress_http_path!=NULL)
     free(this->stress_http_path);
-  this->stress_http_path=strdup(p);
-  return this->stress_http_path!=NULL ? OP_SUCCESS : OP_FAILURE;
+  this->stress_http_path=copy;
+  return OP_SUCCESS;
 }
 
 
@@ -2276,12 +2337,23 @@ const char *NpingOps::getStressHttpPath(){
 
 
 int NpingOps::setStressHttpMethod(const char *m){
+  char *copy;
+  size_t len;
+
   if(m==NULL || m[0]=='\0')
+    return OP_FAILURE;
+  len = strlen(m);
+  if(len > (size_t)HTTP_STRESS_METHOD_MAX)
+    return OP_FAILURE;
+  if(!stress_http_method_is_token(m))
+    return OP_FAILURE;
+  copy = strdup(m);
+  if(copy==NULL)
     return OP_FAILURE;
   if(this->stress_http_method!=NULL)
     free(this->stress_http_method);
-  this->stress_http_method=strdup(m);
-  return this->stress_http_method!=NULL ? OP_SUCCESS : OP_FAILURE;
+  this->stress_http_method=copy;
+  return OP_SUCCESS;
 }
 
 
@@ -2291,16 +2363,26 @@ const char *NpingOps::getStressHttpMethod(){
 
 
 int NpingOps::setStressHttpBody(const char *b){
-  if(this->stress_http_body!=NULL){
-    free(this->stress_http_body);
-    this->stress_http_body=NULL;
-  }
-  this->stress_http_body_set=false;
-  if(b==NULL || b[0]=='\0')
+  char *copy;
+  size_t len;
+
+  if(b==NULL || b[0]=='\0'){
+    if(this->stress_http_body!=NULL){
+      free(this->stress_http_body);
+      this->stress_http_body=NULL;
+    }
+    this->stress_http_body_set=false;
     return OP_SUCCESS;
-  this->stress_http_body=strdup(b);
-  if(this->stress_http_body==NULL)
+  }
+  len = strlen(b);
+  if(len > (size_t)HTTP_STRESS_BODY_MAX)
     return OP_FAILURE;
+  copy = strdup(b);
+  if(copy==NULL)
+    return OP_FAILURE;
+  if(this->stress_http_body!=NULL)
+    free(this->stress_http_body);
+  this->stress_http_body=copy;
   this->stress_http_body_set=true;
   return OP_SUCCESS;
 }
