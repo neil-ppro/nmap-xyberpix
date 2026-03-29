@@ -395,7 +395,86 @@ bool siem_log_active(void) {
       ;
 }
 
-void siem_log_scan_start(const char *args_quoted) {
+static const char *siem_preflight_risk_str(const struct siem_scan_start_context *c) {
+  if (!c)
+    return "low";
+  if (c->timing_level >= 5)
+    return "high";
+  if (c->timing_level >= 4 && c->nse_enabled && !c->safe_profile)
+    return "high";
+  if (c->timing_level >= 4 || c->nse_enabled || c->os_detection || c->service_version_scan)
+    return "medium";
+  if (c->ping_disabled_with_portscan)
+    return "medium";
+  return "low";
+}
+
+static void siem_scan_start_append_policy_and_preflight(std::string &line,
+    const struct siem_scan_start_context *c) {
+  char tbuf[16];
+
+  line += ",\"scanner_policy\":{";
+  if (c) {
+    line += "\"safe_profile\":";
+    line += c->safe_profile ? "true" : "false";
+    line += ",\"adaptive_rate\":";
+    line += c->adaptive_rate ? "true" : "false";
+    line += ",\"ipv6_robust\":";
+    line += c->ipv6_robust ? "true" : "false";
+    line += ",\"auto_hostgroup\":";
+    line += c->auto_hostgroup ? "true" : "false";
+  } else {
+    line += "\"safe_profile\":false,\"adaptive_rate\":false,\"ipv6_robust\":false,"
+            "\"auto_hostgroup\":false";
+  }
+  line += "}";
+  line += ",\"timing_template\":";
+  if (c && c->timing_level >= 0 && c->timing_level <= 5) {
+    Snprintf(tbuf, sizeof(tbuf), "%d", c->timing_level);
+    line += tbuf;
+  } else {
+    line += "null";
+  }
+  line += ",\"preflight_risk\":\"";
+  line += json_escape(siem_preflight_risk_str(c));
+  line += "\"";
+  line += ",\"preflight_notes\":[";
+  if (c) {
+    bool first = true;
+    auto note = [&line, &first](const char *literal) {
+      if (!first)
+        line += ",";
+      first = false;
+      line += "\"";
+      line += literal;
+      line += "\"";
+    };
+    if (c->safe_profile)
+      note("safe_profile");
+    if (c->adaptive_rate)
+      note("adaptive_rate");
+    if (c->ipv6_robust)
+      note("ipv6_robust");
+    if (c->auto_hostgroup)
+      note("auto_hostgroup");
+    if (c->nse_enabled)
+      note("nse_scripts");
+    if (c->os_detection)
+      note("os_detection");
+    if (c->service_version_scan)
+      note("service_version_detection");
+    if (c->ping_disabled_with_portscan)
+      note("ping_discovery_disabled");
+    if (c->timing_level >= 4)
+      note("aggressive_or_insane_timing");
+    if (c->timing_level >= 5)
+      note("insane_timing");
+  }
+  line += "]";
+}
+
+void siem_log_scan_start(const char *args_quoted,
+                         const struct siem_scan_start_context *ctx_or_null) {
   if (!siem_log_active())
     return;
 
@@ -423,6 +502,7 @@ void siem_log_scan_start(const char *args_quoted) {
   } else {
     line += "null";
   }
+  siem_scan_start_append_policy_and_preflight(line, ctx_or_null);
   line += "}";
   siem_write_line(line);
 }

@@ -2127,7 +2127,24 @@ int nmap_main(int argc, char *argv[]) {
 
   if (siem_log_active()) {
     std::string quoted_args = join_quoted(argv, argc);
-    siem_log_scan_start(quoted_args.c_str());
+    struct siem_scan_start_context siem_ctx;
+
+    memset(&siem_ctx, 0, sizeof(siem_ctx));
+    siem_ctx.safe_profile = delayed_options.safe_profile;
+    siem_ctx.adaptive_rate = o.adaptive_rate;
+    siem_ctx.auto_hostgroup = o.auto_hostgroup;
+    siem_ctx.ipv6_robust = o.ipv6_robust;
+    siem_ctx.timing_level = o.timing_level;
+#ifndef NOLUA
+    siem_ctx.nse_enabled = o.script;
+#else
+    siem_ctx.nse_enabled = false;
+#endif
+    siem_ctx.os_detection = o.osscan;
+    siem_ctx.service_version_scan = o.servicescan;
+    siem_ctx.ping_disabled_with_portscan =
+        (o.pingtype == PINGTYPE_NONE && !o.noportscan);
+    siem_log_scan_start(quoted_args.c_str(), &siem_ctx);
   }
 
   /* Before we randomize the ports scanned, lets output them to machine

@@ -31,6 +31,10 @@ When incrementing **`schema_version`**, update this file and [CHANGELOG](../CHAN
 | `platform` | string | Build platform (`NMAP_PLATFORM`). |
 | `pid` | integer | Process ID of the Nmap process. |
 | `args` | string or `null` | Quoted command line (escaped JSON string) or `null` if unavailable. If the joined argv exceeds **128 KiB** UTF-8, it is truncated to a UTF-8-safe prefix before escaping (same `schema_version`). |
+| `scanner_policy` | object | Fork scan-policy flags at start: `safe_profile` (`--safe-profile`), `adaptive_rate`, `ipv6_robust`, `auto_hostgroup` (each boolean). If context is unavailable, all are `false`. |
+| `timing_template` | integer or `null` | Timing preset **0–5** (Paranoid through Insane, i.e. **-T0** … **-T5**), or `null` if not represented. |
+| `preflight_risk` | string | Heuristic impact hint for operators: `low`, `medium`, or `high` (based on timing, NSE, OS/service detection, `-Pn` with port scan, and `safe_profile`). Not a guarantee of network or legal impact. |
+| `preflight_notes` | array of string | Stable machine-readable tags describing active factors (e.g. `nse_scripts`, `os_detection`, `ping_discovery_disabled`, `aggressive_or_insane_timing`, `insane_timing`, `safe_profile`, `adaptive_rate`, `ipv6_robust`, `auto_hostgroup`, `service_version_detection`). Empty if none apply. |
 
 ### `scan_end`
 

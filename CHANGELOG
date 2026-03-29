@@ -1,5 +1,7 @@
 #Nmap Changelog ($Id$); -*-text-*-
 
+o [nmap-xyberpix] **[SIEM]** `scan_start` NDJSON (and syslog payload) adds **`scanner_policy`** (`safe_profile`, `adaptive_rate`, `ipv6_robust`, `auto_hostgroup`), **`timing_template`** (0–5 or null), **`preflight_risk`** (`low` / `medium` / `high`), and **`preflight_notes`** (stable tags for NSE, OS/version detection, `-Pn`+ports, timing tier, policy flags). Documented in **docs/SIEM-NDJSON-SCHEMA.md**.
+
 o [nmap-xyberpix] **`ngit`** (0.4.2): Cap **regex matches per line** and **PEM blocks per file** to limit pathological scan cost (with existing pattern-size limits). Fix **`--extra-regex`** error message when the label is invalid (**`str.format`** treated **`{0,62}`** as a format field).
 
 o [nmap-xyberpix] **CI / tests**: **`tests_fork/requirements-ci.txt`** pins **pytest**, **pytest-qt**, **PySide6**, **pip-audit**; workflow runs **`pytest tests_fork/`** (incl. **Nmap** / **nfuzz** / **Ncat** / **Nping** GUI argv tests, **`QT_QPA_PLATFORM=offscreen`**) then **`pip-audit -r`** on that file. **Ubuntu** **`build-nmap`** job also **`make build-nfuzz`** and **`nfuzz --version`**. Root **`pytest.ini`** sets **`testpaths = tests_fork`**. **`pytest.ini`** / **`.pytest_cache/`** gitignored as applicable.

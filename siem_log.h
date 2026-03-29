@@ -11,12 +11,26 @@
 
 class Target;
 
+/* Optional context for scan_start SIEM events (governance / impact hints). */
+struct siem_scan_start_context {
+  bool safe_profile;
+  bool adaptive_rate;
+  bool auto_hostgroup;
+  bool ipv6_robust;
+  int timing_level; /* 0-5 (Paranoid..Insane), or -1 if unset/unknown */
+  bool nse_enabled;
+  bool os_detection;
+  bool service_version_scan;
+  bool ping_disabled_with_portscan; /* -Pn with a port scan */
+};
+
 void siem_log_init(const char *path_or_null, bool append, const char *tag_or_null,
                    bool enable_syslog_logger);
 void siem_log_close(void);
 bool siem_log_active(void);
 
-void siem_log_scan_start(const char *args_quoted);
+void siem_log_scan_start(const char *args_quoted,
+                         const struct siem_scan_start_context *ctx_or_null);
 void siem_log_scan_end(unsigned int numhosts_scanned, unsigned int numhosts_up,
                        double elapsed_sec);
 
