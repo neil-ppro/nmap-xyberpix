@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "description": "Operator manifest for fork-added or curated NSE usage tiers (nmap-xyberpix). Not exhaustive of all scripts in scripts/.",
+  "scripts": [
+    {
+      "name": "http-openapi-map",
+      "risk_tier": "medium",
+      "category": "http_discovery",
+      "siem_note": "Version scan + HTTP; log scan_start preflight_notes may include service_version_detection.",
+      "safe_profile_recommended": true,
+      "mcp_offsec_preset": "http_discovery"
+    },
+    {
+      "name": "http-graphql-introspect",
+      "risk_tier": "medium",
+      "category": "http_discovery",
+      "siem_note": "Sends introspection-shaped HTTP to GraphQL endpoints.",
+      "safe_profile_recommended": true,
+      "mcp_offsec_preset": "http_discovery"
+    },
+    {
+      "name": "http-jwt-probe",
+      "risk_tier": "low",
+      "category": "http_discovery",
+      "siem_note": "Uses dummy JWT in script-args by default in MCP preset.",
+      "safe_profile_recommended": true,
+      "mcp_offsec_preset": "http_discovery"
+    },
+    {
+      "name": "k8s-api-anon-audit",
+      "risk_tier": "medium",
+      "category": "cloud_k8s",
+      "siem_note": "Probes Kubernetes-style API paths; use only on owned clusters.",
+      "safe_profile_recommended": true,
+      "mcp_offsec_preset": "k8s_api_audit"
+    },
+    {
+      "name": "http-ssrf-canary",
+      "risk_tier": "high",
+      "category": "intrusive_canary",
+      "siem_note": "Intrusive; requires script unsafe args and MCP OFFSEC_INTRUSIVE env.",
+      "safe_profile_recommended": true,
+      "mcp_offsec_preset": "intrusive_canaries"
+    },
+    {
+      "name": "http-cloud-metadata-reach",
+      "risk_tier": "high",
+      "category": "intrusive_canary",
+      "siem_note": "Cloud metadata reachability checks; lab only.",
+      "safe_profile_recommended": true,
+      "mcp_offsec_preset": "intrusive_canaries"
+    },
+    {
+      "name": "http-llm-proxy-leak",
+      "risk_tier": "high",
+      "category": "intrusive_canary",
+      "siem_note": "LLM proxy leak heuristics; intrusive.",
+      "safe_profile_recommended": true,
+      "mcp_offsec_preset": "intrusive_canaries"
+    },
+    {
+      "name": "http-title",
+      "risk_tier": "low",
+      "category": "safe_defaults",
+      "siem_note": "Common safe script; still scope targets appropriately.",
+      "safe_profile_recommended": false,
+      "mcp_offsec_preset": null
+    },
+    {
+      "name": "ssl-cert",
+      "risk_tier": "low",
+      "category": "safe_defaults",
+      "siem_note": "Certificate introspection; low noise.",
+      "safe_profile_recommended": false,
+      "mcp_offsec_preset": null
+    }
+  ]
+}

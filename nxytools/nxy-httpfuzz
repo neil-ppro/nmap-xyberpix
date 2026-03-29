@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+# nxy-httpfuzz — HTTP GET with bounded header mutations (nmap-xyberpix). Stdlib only.
+from __future__ import annotations
+
+import argparse
+import http.client
+import os
+import random
+import ssl
+import sys
+import urllib.parse
+__version__ = "0.1.0"
+_MAX_URL = 4096
+_MAX_ITER = 2000
+_MAX_RESP = 4 * 1024 * 1024
+_FORBIDDEN = frozenset("|\n\r\0;`$&")
+
+
+def _authorized(a: argparse.Namespace) -> bool:
+    return bool(a.authorized) or os.environ.get("NXY_AUTHORIZED", "").strip() == "1"
+
+
+def _mutate_ua(base: str, rng: random.Random) -> str:
+    b = bytearray(base.encode("utf-8", errors="replace")[:200])
+    if not b:
+        b = bytearray(b"nxy-httpfuzz/1")
+    for _ in range(min(3, len(b))):
+        i = rng.randrange(len(b))
+        b[i] = rng.randint(0x20, 0x7E)
+    return b.decode("utf-8", errors="replace")
+
+
+def _request_once(
+    url: str,
+    insecure: bool,
+    timeout: float,
+    ua: str,
+) -> tuple[int, int]:
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError("URL must be http or https")
+    host = parsed.hostname
+    if not host:
+        raise ValueError("missing host")
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    path = parsed.path or "/"
+    if parsed.query:
+        path = f"{path}?{parsed.query}"
+    conn: http.client.HTTPConnection
+    if parsed.scheme == "https":
+        ctx = ssl.create_default_context()
+        if insecure:
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+        conn = http.client.HTTPSConnection(host, port, context=ctx, timeout=timeout)
+    else:
+        conn = http.client.HTTPConnection(host, port, timeout=timeout)
+    try:
+        conn.request("GET", path, headers={"User-Agent": ua, "Accept": "*/*"})
+        resp = conn.getresponse()
+        body = resp.read(_MAX_RESP + 1)
+        if len(body) > _MAX_RESP:
+            body = body[:_MAX_RESP]
+        return resp.status, len(body)
+    finally:
+        conn.close()
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(
+        description="Repeat HTTP GET with randomized User-Agent (authorized lab use)."
+    )
+    p.add_argument("--authorized", action="store_true")
+    p.add_argument("--insecure", action="store_true", help="Disable TLS verification (lab only)")
+    p.add_argument("--iterations", type=int, default=10, metavar="N")
+    p.add_argument("--timeout", type=float, default=10.0, metavar="SEC")
+    p.add_argument("--delay-ms", type=int, default=50, metavar="MS")
+    p.add_argument("--seed", type=int, default=None)
+    p.add_argument(
+        "--version",
+        action="version",
+        version=f"nxy-httpfuzz (nmap-xyberpix) {__version__}",
+    )
+    p.add_argument("url", nargs="?")
+    args = p.parse_args()
+    if not _authorized(args):
+        print("nxy-httpfuzz: requires --authorized or NXY_AUTHORIZED=1", file=sys.stderr)
+        return 2
+    if not args.url:
+        p.error("url required")
+    u = args.url.strip()
+    if "\x00" in u or len(u) > _MAX_URL or any(c in u for c in _FORBIDDEN):
+        raise SystemExit("nxy-httpfuzz: invalid url")
+    n = min(max(args.iterations, 1), _MAX_ITER)
+    timeout = min(max(args.timeout, 0.5), 120.0)
+    delay = min(max(args.delay_ms, 0), 60_000) / 1000.0
+    rng = random.Random(args.seed if args.seed is not None else os.getpid())
+    base_ua = "nxy-httpfuzz/0.1 (authorized test)"
+    for i in range(n):
+        ua = _mutate_ua(base_ua, rng)
+        try:
+            status, blen = _request_once(u, args.insecure, timeout, ua)
+            print(f"iter={i + 1}\tstatus={status}\tbytes={blen}\tua={ua[:80]!r}")
+        except Exception as e:
+            print(f"iter={i + 1}\tERROR\t{e}", file=sys.stderr)
+        if delay > 0 and i + 1 < n:
+            import time
+
+            time.sleep(delay)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

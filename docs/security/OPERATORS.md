@@ -12,6 +12,7 @@ This page is the **entry point** for anyone running or deploying fork-specific f
 | **Offsec NSE** | [nse-offsec-scripts.md](../nse-offsec-scripts.md) | Script headers, `http_offsec` gates |
 | **Secret scanning (ngit)** | **`ngit(1)`** | SECURITY-OVERVIEW § ngit |
 | **Fuzzing (nfuzz)** | **`nfuzz(1)`** | SECURITY-OVERVIEW § nfuzz |
+| **nxytools (lab CLIs)** | [docs/NXYTOOLS.md](../NXYTOOLS.md), **`nxytools(1)`** | Same **`--authorized`** / **`NXY_AUTHORIZED=1`** gates as the scripts |
 | **Desktop launcher** | [xyberpix-gui README](../../xyberpix-gui/README.md) | SECURITY-OVERVIEW § Xyberpix GUI |
 
 ## Acknowledgement flags (do not skip)
@@ -20,6 +21,7 @@ These tools refuse to run until the operator explicitly accepts responsibility:
 
 - **`ngit`**: **`--authorized`** or **`NGIT_AUTHORIZED=1`**. Use only on repositories you **own** or are **explicitly authorized** to assess.
 - **`nfuzz`**: **`--authorized`** or **`NFUZZ_AUTHORIZED=1`**. Raw and network modes can affect **third parties**; HTTP daemon defaults to **loopback** unless **`--http-allow-remote`**.
+- **nxytools** (`nxy-banner`, `nxy-dnsperm`, `nxy-httpfuzz`, `nxy-wsprobe`): **`--authorized`** or **`NXY_AUTHORIZED=1`**. The **Xyberpix** nxytools tab adds **`--authorized`** to each run; use only on **authorized** targets.
 - **MCP non-loopback scans**: tool flags plus server env **`NMAP_MCP_ALLOW_ANY_TARGET=1`** (see MCP README).
 
 ## High-impact environment variables (quick reference)
@@ -35,6 +37,7 @@ These tools refuse to run until the operator explicitly accepts responsibility:
 | `NGIT_AUTHORIZED` | ngit | Same role as `--authorized`. |
 | `NFUZZ_AUTHORIZED` | nfuzz | Same role as `--authorized`. |
 | `NFUZZ_BROWSER_CMD` / `--browser-cmd` | nfuzz | Single `execvp` token; no shell metacharacters or control bytes. |
+| `NXY_AUTHORIZED` | nxytools | Same role as `--authorized` (GUI adds `--authorized` per run). |
 | `NMAP_XYBERPIX_ROOT` | xyberpix-gui | Repo root hint; NUL in value is ignored. |
 
 Full MCP table: [SECURITY-OVERVIEW.md](SECURITY-OVERVIEW.md) and the MCP README.
@@ -44,6 +47,7 @@ Full MCP table: [SECURITY-OVERVIEW.md](SECURITY-OVERVIEW.md) and the MCP README.
 - **MCP** defaults to **loopback-only** targets unless scope and env acks are set.
 - **ngit** talks to **GitHub** and runs **`git clone`**; it validates **`OWNER/NAME`** slugs and caps API response size (see CHANGELOG / SECURITY-OVERVIEW).
 - **nfuzz** can send raw or stream traffic and serve HTTP; bind and browser argv are constrained (see **`nfuzz(1)`**).
+- **nxytools** open TCP/HTTP/WebSocket or perform DNS lookups toward user-supplied targets; caps and argv checks are in each script (see **`docs/NXYTOOLS.md`**).
 - **xyberpix-gui** runs tools with **`QProcess`** (argv list, **no shell**); user “extra” text is split with bounded POSIX **`shlex`** rules ([argv_utils.py](../../xyberpix-gui/xyberpix_gui/argv_utils.py)).
 
 ## Where release notes and PoCs live

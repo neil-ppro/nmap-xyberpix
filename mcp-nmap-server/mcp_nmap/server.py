@@ -17,6 +17,15 @@ import subprocess
 from typing import Any
 
 import defusedxml.ElementTree as ET
+
+from mcp_nmap.audit_log import audit_append
+from mcp_nmap.policy_file import (
+    load_mcp_policy,
+    policy_cap_timeout,
+    policy_check_max_targets,
+    policy_scan_options_error,
+    policy_targets_error,
+)
 from defusedxml.common import EntitiesForbidden
 from mcp.server.fastmcp import FastMCP
 
@@ -36,6 +45,12 @@ _ENV_UNSAFE_CLI = "NMAP_MCP_ALLOW_UNSAFE_CLI"
 
 # Optional --datadir for nmap-xyberpix tree (custom nselib/scripts without unsafe CLI).
 _ENV_DATADIR = "NMAP_MCP_DATADIR"
+
+# Optional JSON policy (extra allowlists, flag blocks, timeouts). See docs/MCP-POLICY-FILE.md.
+_ENV_POLICY_FILE = "NMAP_MCP_POLICY_FILE"
+
+# Optional NDJSON audit log (proposed vs executed argv).
+_ENV_AUDIT_LOG = "NMAP_MCP_AUDIT_LOG"
 
 # Belt-and-suspenders with allow_intrusive_offsec on offsec preset tools.
 _ENV_OFFSEC_INTRUSIVE = "NMAP_MCP_OFFSEC_INTRUSIVE"
@@ -772,6 +787,32 @@ def _is_loopback_target(spec: str) -> bool:
     return ip.is_loopback
 
 
+def _audit_argv_trim(argv: list[str]) -> list[str]:
+    if len(argv) <= 96:
+        return list(argv)
+    return list(argv[:96]) + ["[... truncated ...]"]
+
+
+def _mcp_apply_optional_policy(
+    scan_options: list[str], targets: list[str]
+) -> tuple[dict[str, Any], str | None]:
+    """
+    Load NMAP_MCP_POLICY_FILE (if set) and apply scan_option / max_targets rules.
+    Returns (policy_dict, error_message).
+    """
+    try:
+        pol = load_mcp_policy()
+    except RuntimeError as e:
+        return {}, str(e)
+    err = policy_scan_options_error(scan_options, pol)
+    if err:
+        return pol, err
+    err = policy_check_max_targets(targets, pol)
+    if err:
+        return pol, err
+    return pol, None
+
+
 def _targets_allowed_for_scope(
     targets: list[str], network_scope: str
 ) -> tuple[bool, str]:
@@ -850,7 +891,9 @@ mcp = FastMCP(
         f"flags; set {_ENV_UNSAFE_CLI}=1 on the server to allow the full CLI. "
         "Curated nmap-xyberpix offsec presets (nmap_offsec_*) may run a fixed "
         f"allowlisted --script set without unsafe CLI when {_ENV_DATADIR} points "
-        "at an nmap-xyberpix source tree (or install includes those scripts)."
+        "at an nmap-xyberpix source tree (or install includes those scripts). "
+        f"Optional {_ENV_POLICY_FILE} adds JSON allowlists and flag blocks; "
+        f"{_ENV_AUDIT_LOG} appends NDJSON audit lines for dry runs and executions."
     ),
 )
 
@@ -892,9 +935,9 @@ def nmap_dry_run(
     except ValueError as e:
         return {"ok": False, "error": str(e)}
 
-    pol = _scan_options_policy_error(scan_options)
-    if pol:
-        return {"ok": False, "error": pol}
+    pol_err = _scan_options_policy_error(scan_options)
+    if pol_err:
+        return {"ok": False, "error": pol_err}
 
     if network_scope == "any" and not i_acknowledge_network_scan_risk:
         return {
@@ -904,10 +947,45 @@ def nmap_dry_run(
 
     ok_scope, scope_err = _targets_allowed_for_scope(targets, network_scope)
     if not ok_scope:
+        audit_append(
+            "mcp_nmap_dry_run",
+            ok=False,
+            error=scope_err,
+            tool="nmap_dry_run",
+            targets=targets[:32],
+        )
         return {"ok": False, "error": scope_err}
+
+    file_pol, perr = _mcp_apply_optional_policy(scan_options, targets)
+    if perr:
+        audit_append(
+            "mcp_nmap_dry_run",
+            ok=False,
+            error=perr,
+            tool="nmap_dry_run",
+            policy_file=os.environ.get(_ENV_POLICY_FILE, "").strip() or None,
+        )
+        return {"ok": False, "error": perr}
+    terr = policy_targets_error(targets, file_pol)
+    if terr:
+        audit_append(
+            "mcp_nmap_dry_run",
+            ok=False,
+            error=terr,
+            tool="nmap_dry_run",
+            policy_file=os.environ.get(_ENV_POLICY_FILE, "").strip() or None,
+        )
+        return {"ok": False, "error": terr}
 
     binary = _nmap_binary()
     argv = [binary] + list(scan_options) + list(targets)
+    audit_append(
+        "mcp_nmap_dry_run",
+        ok=True,
+        tool="nmap_dry_run",
+        argv=_audit_argv_trim(argv),
+        network_scope=network_scope,
+    )
     return {"ok": True, "argv": argv, "note": "Command not executed."}
 
 
@@ -940,9 +1018,9 @@ def nmap_run_scan(
     except ValueError as e:
         return {"ok": False, "error": str(e)}
 
-    pol = _scan_options_policy_error(scan_options)
-    if pol:
-        return {"ok": False, "error": pol}
+    pol_err = _scan_options_policy_error(scan_options)
+    if pol_err:
+        return {"ok": False, "error": pol_err}
 
     if timeout_seconds < 1 or timeout_seconds > _MAX_TIMEOUT:
         return {
@@ -958,12 +1036,58 @@ def nmap_run_scan(
 
     ok_scope, scope_err = _targets_allowed_for_scope(targets, network_scope)
     if not ok_scope:
+        audit_append(
+            "mcp_nmap_run_scan",
+            ok=False,
+            phase="scope",
+            error=scope_err,
+            tool="nmap_run_scan",
+        )
         return {"ok": False, "error": scope_err}
+
+    file_pol, perr = _mcp_apply_optional_policy(scan_options, targets)
+    if perr:
+        audit_append(
+            "mcp_nmap_run_scan",
+            ok=False,
+            phase="policy_file",
+            error=perr,
+            tool="nmap_run_scan",
+            policy_file=os.environ.get(_ENV_POLICY_FILE, "").strip() or None,
+        )
+        return {"ok": False, "error": perr}
+    terr = policy_targets_error(targets, file_pol)
+    if terr:
+        audit_append(
+            "mcp_nmap_run_scan",
+            ok=False,
+            phase="policy_targets",
+            error=terr,
+            tool="nmap_run_scan",
+        )
+        return {"ok": False, "error": terr}
+
+    timeout_seconds = policy_cap_timeout(timeout_seconds, file_pol)
 
     binary = _nmap_binary()
     argv = [binary] + list(scan_options) + list(targets)
+    audit_append(
+        "mcp_nmap_run_scan",
+        ok=True,
+        phase="execute",
+        tool="nmap_run_scan",
+        argv=_audit_argv_trim(argv),
+        timeout_seconds=timeout_seconds,
+        network_scope=network_scope,
+    )
     out = _run_nmap(argv, timeout=timeout_seconds)
     out["argv"] = argv
+    audit_append(
+        "mcp_nmap_run_scan_finished",
+        ok=bool(out.get("ok")),
+        returncode=out.get("returncode"),
+        tool="nmap_run_scan",
+    )
     return out
 
 
@@ -1032,8 +1156,37 @@ def nmap_offsec_dry_run(
     if not ok_scope:
         return {"ok": False, "error": scope_err}
 
+    file_pol, perr = _mcp_apply_optional_policy(scan_options, targets)
+    if perr:
+        audit_append(
+            "mcp_nmap_offsec_dry_run",
+            ok=False,
+            error=perr,
+            tool="nmap_offsec_dry_run",
+            preset_id=preset_id,
+        )
+        return {"ok": False, "error": perr}
+    terr = policy_targets_error(targets, file_pol)
+    if terr:
+        audit_append(
+            "mcp_nmap_offsec_dry_run",
+            ok=False,
+            error=terr,
+            tool="nmap_offsec_dry_run",
+            preset_id=preset_id,
+        )
+        return {"ok": False, "error": terr}
+
     binary = _nmap_binary()
     argv = [binary] + scan_options + list(targets)
+    audit_append(
+        "mcp_nmap_offsec_dry_run",
+        ok=True,
+        tool="nmap_offsec_dry_run",
+        preset_id=preset_id,
+        argv=_audit_argv_trim(argv),
+        network_scope=network_scope,
+    )
     return {"ok": True, "argv": argv, "note": "Command not executed."}
 
 
@@ -1081,10 +1234,52 @@ def nmap_offsec_run_scan(
     if not ok_scope:
         return {"ok": False, "error": scope_err}
 
+    file_pol, perr = _mcp_apply_optional_policy(scan_options, targets)
+    if perr:
+        audit_append(
+            "mcp_nmap_offsec_run_scan",
+            ok=False,
+            phase="policy_file",
+            error=perr,
+            tool="nmap_offsec_run_scan",
+            preset_id=preset_id,
+        )
+        return {"ok": False, "error": perr}
+    terr = policy_targets_error(targets, file_pol)
+    if terr:
+        audit_append(
+            "mcp_nmap_offsec_run_scan",
+            ok=False,
+            phase="policy_targets",
+            error=terr,
+            tool="nmap_offsec_run_scan",
+            preset_id=preset_id,
+        )
+        return {"ok": False, "error": terr}
+
+    timeout_seconds = policy_cap_timeout(timeout_seconds, file_pol)
+
     binary = _nmap_binary()
     argv = [binary] + scan_options + list(targets)
+    audit_append(
+        "mcp_nmap_offsec_run_scan",
+        ok=True,
+        phase="execute",
+        tool="nmap_offsec_run_scan",
+        preset_id=preset_id,
+        argv=_audit_argv_trim(argv),
+        timeout_seconds=timeout_seconds,
+        network_scope=network_scope,
+    )
     out = _run_nmap(argv, timeout=timeout_seconds)
     out["argv"] = argv
+    audit_append(
+        "mcp_nmap_offsec_run_scan_finished",
+        ok=bool(out.get("ok")),
+        returncode=out.get("returncode"),
+        tool="nmap_offsec_run_scan",
+        preset_id=preset_id,
+    )
     return out
 
 

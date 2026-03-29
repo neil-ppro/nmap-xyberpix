@@ -1,5 +1,17 @@
 #Nmap Changelog ($Id$); -*-text-*-
 
+o [nmap-xyberpix] **xyberpix-gui**: **nxytools** sidebar page (**`NxytoolsPage`**) with tabs for **`nxy-banner`**, **`nxy-dnsperm`**, **`nxy-httpfuzz`**, **`nxy-wsprobe`** (auto **`--authorized`**); **Settings** path overrides for each script; **`binaries.resolve_binary`** looks under **`nxytools/`** when **`NMAP_XYBERPIX_ROOT`** is set. Docs: **xyberpix-gui/README.md**, **SECURITY-OVERVIEW**, **OPERATORS**; **`tests_fork`** argv test for nxytools “extra” field.
+
+o [nmap-xyberpix] **README-nmap-xyberpix**: table rows for **nxytools** and MCP policy/audit env vars (links **`docs/NXYTOOLS.md`**, **`docs/MCP-POLICY-FILE.md`**); CI note includes **`make build-nxytools`**.
+
+o [nmap-xyberpix] **nxytools** (stdlib Python CLIs): **`nxy-banner`**, **`nxy-dnsperm`**, **`nxy-httpfuzz`**, **`nxy-wsprobe`** — caps, timeouts, **`--authorized`** / **`NXY_AUTHORIZED`**, argv hygiene. **`make build-nxytools`** / **`install-nxytools`**, man **`nxytools(1)`**, operator doc **`docs/NXYTOOLS.md`**. Ubuntu CI runs **`build-nxytools`**.
+
+o [nmap-xyberpix] **mcp-nmap-server**: optional **`NMAP_MCP_POLICY_FILE`** JSON (target CIDR/hostname allowlists, `max_targets`, `max_timeout_seconds`, disallowed scan-option prefixes) and **`NMAP_MCP_AUDIT_LOG`** NDJSON audit for dry runs and executions. Documented in **`docs/MCP-POLICY-FILE.md`**; tests in **`mcp-nmap-server/tests/test_mcp_policy_audit.py`**.
+
+o [nmap-xyberpix] **NSE**: curated operator manifest **`docs/nse/NMAP-XYBERPIX-CURATED-MANIFEST.json`** + **`docs/nse/CURATED-NSE.md`** (risk tier, SIEM notes, MCP preset linkage).
+
+o [nmap-xyberpix] **training**: **`training/ctf-lab/`** loopback-only **Docker** nginx target (**127.0.0.1:18080**), **`profile_ctf_lab.json`** for xyberpix-gui profile shape.
+
 o [nmap-xyberpix] **xyberpix-gui**: Nmap page **nfuzz handoff** from **grepable/XML** files or **last run output** (suggested argv only; user applies or copies). **Built-in checklist profiles** (polite+SIEM, discovery-only, decoy stagger lab, IPv6 robust) with preflight text. **ngit → SIEM** form runs **`ngit --siem-log`** to append **`ngit_scan_summary`** NDJSON (counts only). **nfuzz** tab: **lab presets** (polite stream, slow TCP chunks, PCAP polite) and optional **`--lab-audit-tag`**. **`scripts/nmap-nfuzz-suggest.py`** for scripted suggestions. **`tests_fork`** covers handoff parsing.
 
 o [nmap-xyberpix] **`ngit`** (0.4.3): **`--siem-log PATH`** appends one **`ngit_scan_summary`** NDJSON line per run (with optional **`--siem-tag`**); no secret values in that line. **`ngit(1)`** updated.

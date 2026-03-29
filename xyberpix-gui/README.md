@@ -1,6 +1,6 @@
 # Xyberpix GUI
 
-A modern PySide6 desktop app for **nmap-xyberpix**: run **Nmap**, **Nping**, **Ncat**, and **nfuzz** with guided forms, live output, and quick setup for **mcp-nmap-server** (Cursor / MCP clients).
+A modern PySide6 desktop app for **nmap-xyberpix**: run **Nmap**, **Nping**, **Ncat**, **nfuzz**, and **nxytools** (`nxy-banner`, `nxy-dnsperm`, `nxy-httpfuzz`, `nxy-wsprobe`) with guided forms, live output, and quick setup for **mcp-nmap-server** (Cursor / MCP clients).
 
 ## Install
 
@@ -26,7 +26,7 @@ Options follow **`nmap --help`** sections as dropdowns, with text fields for fla
 
 ## Binary paths
 
-The app looks for tools on `PATH`, or under **`NMAP_XYBERPIX_ROOT`** (path to the nmap-xyberpix source tree) for freshly built binaries (`nmap/nmap`, `nping/nping`, `ncat/ncat`, `nfuzz/nfuzz`).
+The app looks for tools on `PATH`, or under **`NMAP_XYBERPIX_ROOT`** (path to the nmap-xyberpix source tree) for freshly built binaries (`nmap/nmap`, `nping/nping`, `ncat/ncat`, `nfuzz/nfuzz`, `ngit/ngit`, and `nxytools/nxy-*` scripts).
 
 Override individual tools in **Settings** (gear on the welcome screen) if needed.
 

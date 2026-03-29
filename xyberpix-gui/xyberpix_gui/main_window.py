@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from xyberpix_gui.binaries import find_repo_root, resolve_binary
-from xyberpix_gui.pages import HomePage, McpPage, NcatPage, NfuzzPage, NmapPage, NpingPage
+from xyberpix_gui.pages import HomePage, McpPage, NcatPage, NfuzzPage, NmapPage, NpingPage, NxytoolsPage
 
 
 class ToolResolver:
@@ -55,6 +55,10 @@ class SettingsDialog(QDialog):
             ("ncat", "ncat"),
             ("nfuzz", "nfuzz"),
             ("ngit", "ngit"),
+            ("nxy-banner", "nxy-banner"),
+            ("nxy-dnsperm", "nxy-dnsperm"),
+            ("nxy-httpfuzz", "nxy-httpfuzz"),
+            ("nxy-wsprobe", "nxy-wsprobe"),
         ):
             row = QWidget()
             h = QHBoxLayout(row)
@@ -112,6 +116,7 @@ class MainWindow(QMainWindow):
             ("Nping", "Probes & echo"),
             ("Ncat", "Listen / connect"),
             ("nfuzz", "Fuzzing"),
+            ("nxytools", "Banner, DNS, HTTP fuzz, WS probe"),
             ("MCP", "Editor integration"),
         ):
             it = QListWidgetItem(text)
@@ -137,6 +142,7 @@ class MainWindow(QMainWindow):
         stack.addWidget(NpingPage(self._resolver))
         stack.addWidget(NcatPage(self._resolver))
         stack.addWidget(nfuzz)
+        stack.addWidget(NxytoolsPage(self._resolver))
         stack.addWidget(McpPage())
 
         side.currentRowChanged.connect(stack.setCurrentIndex)

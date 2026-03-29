@@ -1,4 +1,4 @@
-"""Resolve paths to nmap, nping, ncat, nfuzz, ngit."""
+"""Resolve paths to nmap, nping, ncat, nfuzz, ngit, and nxytools CLIs."""
 
 from __future__ import annotations
 
@@ -48,6 +48,10 @@ def _candidates(name: str) -> list[Path]:
             "ncat": ("ncat",),
             "nfuzz": ("nfuzz",),
             "ngit": ("ngit",),
+            "nxy-banner": ("nxytools",),
+            "nxy-dnsperm": ("nxytools",),
+            "nxy-httpfuzz": ("nxytools",),
+            "nxy-wsprobe": ("nxytools",),
         }
         for sub in subdirs.get(name, ()):
             for exe in (name, f"{name}.exe"):

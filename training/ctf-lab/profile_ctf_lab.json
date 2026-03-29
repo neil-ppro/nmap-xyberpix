@@ -1,0 +1,18 @@
+{
+  "v": 2,
+  "combo": {
+    "timing_template": 3,
+    "safe_profile": 1,
+    "ping_scan": 0,
+    "skip_discovery": 0,
+    "dns_resolution": 0,
+    "siem_syslog": 0,
+    "port_reason": 1
+  },
+  "lines": {
+    "targets": "127.0.0.1",
+    "ports": "18080",
+    "siem_tag": "ctf=lab",
+    "extra": "-sT -sV"
+  }
+}

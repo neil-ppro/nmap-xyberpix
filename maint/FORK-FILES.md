@@ -16,6 +16,13 @@ Paths below are **likely to conflict** or are **fork-specific**. Use this when m
 
 - `mcp-nmap-server/` (entire package, tests, `pyproject.toml`)
 
+## Lightweight tools
+
+- `nxytools/` — `nxy-banner`, `nxy-dnsperm`, `nxy-httpfuzz`, `nxy-wsprobe`, `nxytools(1)`
+- `docs/NXYTOOLS.md`, `docs/MCP-POLICY-FILE.md`
+- `docs/nse/NMAP-XYBERPIX-CURATED-MANIFEST.json`, `docs/nse/CURATED-NSE.md`
+- `training/ctf-lab/` — Docker lab + sample GUI profile JSON
+
 ## Zenmap
 
 - `zenmap/zenmapCore/NmapOptions.py` (long-option tables, render/parse for fork flags)

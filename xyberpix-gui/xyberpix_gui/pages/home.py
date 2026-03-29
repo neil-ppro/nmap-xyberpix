@@ -25,7 +25,7 @@ class HomePage(QWidget):
         title = QLabel("Xyberpix")
         title.setObjectName("title")
         sub = QLabel(
-            "A focused control room for Nmap, Nping, Ncat, nfuzz, and MCP setup. "
+            "A focused control room for Nmap, Nping, Ncat, nfuzz, nxytools, and MCP setup. "
             "Built for nmap-xyberpix."
         )
         sub.setObjectName("subtitle")
@@ -54,7 +54,12 @@ class HomePage(QWidget):
                 "Templates, HTTP daemon, PCAP, lab presets + audit JSON on stderr.",
                 4,
             ),
-            ("MCP server", "Copy Cursor config and env hints for nmap-mcp-server.", 5),
+            (
+                "nxytools",
+                "nxy-banner, nxy-dnsperm, nxy-httpfuzz, nxy-wsprobe — paths in Settings or repo nxytools/.",
+                5,
+            ),
+            ("MCP server", "Copy Cursor config and env hints for nmap-mcp-server.", 6),
         ]
         for i, (name, blurb, idx) in enumerate(cards):
             grid.addWidget(self._card(name, blurb, idx), i // 2, i % 2)

@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+# nxy-wsprobe — send WebSocket upgrade request; print status line + headers (nmap-xyberpix).
+from __future__ import annotations
+
+import argparse
+import os
+import socket
+import ssl
+import sys
+
+__version__ = "0.1.0"
+_MAX_READ = 65536
+_FORBIDDEN = frozenset("|\n\r\0;`$&")
+
+
+def _authorized(a: argparse.Namespace) -> bool:
+    return bool(a.authorized) or os.environ.get("NXY_AUTHORIZED", "").strip() == "1"
+
+
+def _chk(s: str, lab: str) -> None:
+    if "\x00" in s or len(s) > 2048:
+        raise SystemExit(f"nxy-wsprobe: invalid {lab}")
+    if any(c in s for c in _FORBIDDEN):
+        raise SystemExit(f"nxy-wsprobe: {lab} contains forbidden characters")
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(
+        description="TCP/TLS WebSocket upgrade probe (reads response headers only)."
+    )
+    p.add_argument("--authorized", action="store_true")
+    p.add_argument("--tls", action="store_true", help="Use TLS (e.g. wss port 443)")
+    p.add_argument("--insecure", action="store_true", help="Skip TLS cert verify")
+    p.add_argument("--timeout", type=float, default=10.0)
+    p.add_argument(
+        "--version",
+        action="version",
+        version=f"nxy-wsprobe (nmap-xyberpix) {__version__}",
+    )
+    p.add_argument("host")
+    p.add_argument("port", type=int)
+    p.add_argument("path", nargs="?", default="/")
+    args = p.parse_args()
+    if not _authorized(args):
+        print("nxy-wsprobe: requires --authorized or NXY_AUTHORIZED=1", file=sys.stderr)
+        return 2
+    host = args.host.strip()
+    path = args.path.strip() or "/"
+    if not path.startswith("/"):
+        path = "/" + path
+    _chk(host, "host")
+    _chk(path, "path")
+    if args.port < 1 or args.port > 65535:
+        raise SystemExit("nxy-wsprobe: bad port")
+    to = min(max(args.timeout, 0.5), 120.0)
+
+    req = (
+        f"GET {path} HTTP/1.1\r\n"
+        f"Host: {host}\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "\r\n"
+    ).encode("ascii", errors="strict")
+
+    sock: socket.socket | ssl.SSLSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(to)
+    try:
+        sock.connect((host, args.port))
+        if args.tls:
+            ctx = ssl.create_default_context()
+            if args.insecure:
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+            sock = ctx.wrap_socket(sock, server_hostname=host)
+        sock.sendall(req)
+        buf = bytearray()
+        while b"\r\n\r\n" not in buf and len(buf) < _MAX_READ:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            buf.extend(chunk)
+        hdr, _, rest = buf.partition(b"\r\n\r\n")
+        sys.stdout.buffer.write(hdr + b"\r\n\r\n")
+        if rest:
+            sys.stdout.buffer.write(b"[... body omitted ...]\n")
+    except OSError as e:
+        print(f"nxy-wsprobe: {e}", file=sys.stderr)
+        return 1
+    finally:
+        try:
+            sock.close()
+        except OSError:
+            pass
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,56 @@
+.TH NXYTOOLS 1 "March 2026" "nmap-xyberpix" "User Commands"
+.SH NAME
+nxy\-banner, nxy\-dnsperm, nxy\-httpfuzz, nxy\-wsprobe \- small authorized\-use lab helpers
+.SH SYNOPSIS
+.B nxy\-banner
+.B \-\-authorized
+.I HOST PORT
+.RB [ \-\-connect\-timeout
+.IR SEC ]
+.RB [ \-\-read\-bytes
+.IR N ]
+.br
+.B nxy\-dnsperm
+.B \-\-authorized
+.BI \-\-domain " DOMAIN"
+.RB [ \-\-word\-file
+.IR PATH ]
+.RB [ \-\-max\-names
+.IR N ]
+.br
+.B nxy\-httpfuzz
+.B \-\-authorized
+.I URL
+.RB [ \-\-iterations
+.IR N ]
+.RB [ \-\-delay\-ms
+.IR MS ]
+.RB [ \-\-insecure ]
+.br
+.B nxy\-wsprobe
+.B \-\-authorized
+.I HOST PORT
+.RI [ PATH ]
+.RB [ \-\-tls ]
+.RB [ \-\-insecure ]
+.SH DESCRIPTION
+These utilities complement
+.BR nfuzz (1)
+and
+.BR ngit (1)\:
+minimal TCP/HTTP/DNS probes with input validation and caps.
+Each program refuses to run without
+.B \-\-authorized
+or environment variable
+.BR NXY_AUTHORIZED=1 .
+.PP
+Run
+.B \-\-help
+per tool for limits (timeouts, max bytes, max iterations).
+Full operator notes:
+.B docs/NXYTOOLS.md
+in the nmap\-xyberpix tree.
+.SH SEE ALSO
+.BR nfuzz (1),
+.BR ngit (1),
+.BR nmap (1)

@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+# nxy-banner — minimal TCP banner read (nmap-xyberpix). Stdlib only; authorized use only.
+from __future__ import annotations
+
+import argparse
+import os
+import socket
+import sys
+
+__version__ = "0.1.0"
+_MAX_HOST = 512
+_MAX_BYTES = 65536
+_FORBIDDEN = frozenset("|\n\r\0;`$&")
+
+
+def _authorized(a: argparse.Namespace) -> bool:
+    return bool(a.authorized) or os.environ.get("NXY_AUTHORIZED", "").strip() == "1"
+
+
+def _chk(s: str, what: str) -> None:
+    if "\x00" in s or len(s) > _MAX_HOST:
+        raise SystemExit(f"nxy-banner: invalid {what}")
+    if any(c in s for c in _FORBIDDEN):
+        raise SystemExit(f"nxy-banner: {what} contains forbidden characters")
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(description="TCP connect and read up to N bytes (authorized targets only).")
+    p.add_argument("--authorized", action="store_true", help="Acknowledge authorization to touch the target")
+    p.add_argument("--connect-timeout", type=float, default=5.0, metavar="SEC", help="Connect timeout (default 5)")
+    p.add_argument("--read-bytes", type=int, default=2048, metavar="N", help="Max bytes to read (default 2048)")
+    p.add_argument(
+        "--version",
+        action="version",
+        version=f"nxy-banner (nmap-xyberpix) {__version__}",
+    )
+    p.add_argument("host", nargs="?")
+    p.add_argument("port", nargs="?", type=int)
+    args = p.parse_args()
+    if not _authorized(args):
+        print(
+            "nxy-banner: requires --authorized or NXY_AUTHORIZED=1",
+            file=sys.stderr,
+        )
+        return 2
+    if not args.host or args.port is None:
+        p.error("host and port required")
+    _chk(args.host, "host")
+    if args.port < 1 or args.port > 65535:
+        raise SystemExit("nxy-banner: port out of range")
+    ct = min(max(args.connect_timeout, 0.5), 120.0)
+    rb = min(max(args.read_bytes, 1), _MAX_BYTES)
+    sk = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sk.settimeout(ct)
+    try:
+        sk.connect((args.host, args.port))
+    except OSError as e:
+        print(f"nxy-banner: connect: {e}", file=sys.stderr)
+        return 1
+    try:
+        data = sk.recv(rb)
+    except OSError as e:
+        print(f"nxy-banner: recv: {e}", file=sys.stderr)
+        return 1
+    finally:
+        sk.close()
+    sys.stdout.buffer.write(data)
+    if data and not data.endswith(b"\n"):
+        sys.stdout.buffer.write(b"\n")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

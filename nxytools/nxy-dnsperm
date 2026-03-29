@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+# nxy-dnsperm — subdomain permutation + DNS resolution (nmap-xyberpix). Stdlib only.
+from __future__ import annotations
+
+import argparse
+import os
+import socket
+import sys
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout, as_completed
+from pathlib import Path
+
+__version__ = "0.1.0"
+_MAX_DOMAIN = 253
+_MAX_NAMES = 5000
+_MAX_WORD_FILE = 256 * 1024
+_DEFAULT_WORDS = (
+    "www",
+    "mail",
+    "ftp",
+    "dev",
+    "staging",
+    "admin",
+    "api",
+    "vpn",
+    "test",
+    "internal",
+    "git",
+    "jenkins",
+    "grafana",
+    "kube",
+    "portal",
+)
+_FORBIDDEN = frozenset("|\n\r\0;`$&")
+
+
+def _authorized(a: argparse.Namespace) -> bool:
+    return bool(a.authorized) or os.environ.get("NXY_AUTHORIZED", "").strip() == "1"
+
+
+def _chk_label(s: str) -> None:
+    if "\x00" in s or len(s) > _MAX_DOMAIN:
+        raise SystemExit("nxy-dnsperm: invalid domain")
+    if any(c in s for c in _FORBIDDEN):
+        raise SystemExit("nxy-dnsperm: domain contains forbidden characters")
+
+
+def _load_words(path: str | None) -> list[str]:
+    if not path:
+        return list(_DEFAULT_WORDS)
+    raw = Path(path).read_bytes()
+    if len(raw) > _MAX_WORD_FILE:
+        raise SystemExit("nxy-dnsperm: word file too large")
+    text = raw.decode("utf-8", errors="replace")
+    out: list[str] = []
+    for line in text.splitlines():
+        w = line.strip().split("#", 1)[0].strip()
+        if w and len(w) <= 120 and "\x00" not in w:
+            out.append(w)
+    return out or list(_DEFAULT_WORDS)
+
+
+def _resolve_one(host: str, timeout: float) -> tuple[str, bool, str]:
+    def job() -> None:
+        socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+
+    with ThreadPoolExecutor(max_workers=1) as ex:
+        fut = ex.submit(job)
+        try:
+            fut.result(timeout=timeout)
+        except FuturesTimeout:
+            return host, False, "timeout"
+        except socket.gaierror as e:
+            return host, False, str(e)
+        except OSError as e:
+            return host, False, str(e)
+    return host, True, "resolved"
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(
+        description="Resolve WORD.DOMAIN for each word (authorized DNS recon only)."
+    )
+    p.add_argument("--authorized", action="store_true")
+    p.add_argument("--domain", required=True, help="Base domain (e.g. example.com)")
+    p.add_argument("--word-file", metavar="PATH", help="Words one per line (optional)")
+    p.add_argument("--max-names", type=int, default=200, help="Cap generated names (default 200)")
+    p.add_argument("--dns-timeout", type=float, default=2.0, help="Per-name resolution timeout (default 2)")
+    p.add_argument("--workers", type=int, default=8, help="Concurrent lookups (default 8)")
+    p.add_argument(
+        "--version",
+        action="version",
+        version=f"nxy-dnsperm (nmap-xyberpix) {__version__}",
+    )
+    args = p.parse_args()
+    if not _authorized(args):
+        print("nxy-dnsperm: requires --authorized or NXY_AUTHORIZED=1", file=sys.stderr)
+        return 2
+    dom = args.domain.strip().lower().rstrip(".")
+    _chk_label(dom)
+    words = _load_words(args.word_file)
+    cap = min(max(args.max_names, 1), _MAX_NAMES)
+    names = [f"{w}.{dom}" for w in words[:cap]]
+    timeout = min(max(args.dns_timeout, 0.2), 30.0)
+    workers = min(max(args.workers, 1), 64)
+
+    hits = 0
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futs = {pool.submit(_resolve_one, h, timeout): h for h in names}
+        for fut in as_completed(futs):
+            host, ok, msg = fut.result()
+            if ok:
+                hits += 1
+                print(f"{host}\tOK\t{msg}")
+            else:
+                print(f"{host}\tNO\t{msg}")
+    print(f"nxy-dnsperm: finished {len(names)} names, {hits} resolved", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

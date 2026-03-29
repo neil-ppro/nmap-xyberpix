@@ -103,6 +103,9 @@ jobs:
           make -j3 build-nfuzz
           ./nfuzz/nfuzz --version
 
+      - name: nxytools smoke (--version)
+        run: make -j3 build-nxytools
+
       - uses: actions/upload-artifact@v7
         with:
           name: nmap-ubuntu-binary

@@ -55,7 +55,7 @@ The optional **`ngit`** script (installed with Nmap on Unix when Python 3 is ava
 
 ## Xyberpix GUI
 
-The **xyberpix-gui** helper runs **Nmap**, **Nping**, **Ncat**, and **nfuzz** via **`QProcess`** with an explicit argv list (**no shell**). User-typed “extra” flags and multi-target lines are split with POSIX **`shlex`** rules through **`xyberpix_gui.argv_utils`**, which rejects **NUL** bytes, caps **UTF-8 size** and **token count**, and reports **quoting errors** before starting the child. **`ProcessRunner`** re-checks arguments and shows a **`shlex.join`**-style status preview. Per-tool binary overrides and **`NMAP_XYBERPIX_ROOT`** ignore paths containing **NUL**.
+The **xyberpix-gui** helper runs **Nmap**, **Nping**, **Ncat**, **nfuzz**, and **nxytools** CLIs via **`QProcess`** with an explicit argv list (**no shell**). User-typed “extra” flags and multi-target lines are split with POSIX **`shlex`** rules through **`xyberpix_gui.argv_utils`**, which rejects **NUL** bytes, caps **UTF-8 size** and **token count**, and reports **quoting errors** before starting the child. **`ProcessRunner`** re-checks arguments and shows a **`shlex.join`**-style status preview. Per-tool binary overrides and **`NMAP_XYBERPIX_ROOT`** ignore paths containing **NUL**. The **nxytools** tab passes **`--authorized`** automatically; operators may still set **`NXY_AUTHORIZED=1`** for runs outside the GUI.
 
 ## NSE (offsec scripts)
 
