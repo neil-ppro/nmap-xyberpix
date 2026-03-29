@@ -1,11 +1,13 @@
 """Unit tests for MCP Nmap server validation helpers."""
 
 import os
+from pathlib import Path
 
 import pytest
 
 from mcp_nmap.server import (
     _is_loopback_target,
+    _nmap_binary,
     _targets_allowed_for_scope,
     _validate_scan_options,
     _validate_targets,
@@ -18,6 +20,33 @@ from mcp_nmap.server import (
 def test_validate_rejects_shellish_chars() -> None:
     with pytest.raises(ValueError, match="forbidden"):
         _validate_scan_options(["-p", "80;rm -rf /"])
+
+
+def test_nmap_binary_env_rejects_shell_metacharacters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NMAP_MCP_BINARY", "/usr/bin/nmap;evil")
+    with pytest.raises(ValueError, match="forbidden"):
+        _nmap_binary()
+
+
+def test_nmap_binary_env_requires_regular_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    missing = tmp_path / "not-there-nmap"
+    monkeypatch.setenv("NMAP_MCP_BINARY", str(missing))
+    with pytest.raises(RuntimeError, match="regular file"):
+        _nmap_binary()
+
+
+def test_nmap_binary_env_accepts_executable_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    p = tmp_path / "fake-nmap"
+    p.write_text("#!/bin/sh\necho nmap\n", encoding="utf-8")
+    p.chmod(0o755)
+    monkeypatch.setenv("NMAP_MCP_BINARY", str(p))
+    assert _nmap_binary() == str(p.resolve())
 
 
 def test_validate_targets_nonempty() -> None:

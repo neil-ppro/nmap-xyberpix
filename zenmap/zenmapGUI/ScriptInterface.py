@@ -79,6 +79,7 @@ from zenmapCore.ScriptMetadata import get_script_entries
 from zenmapCore.ScriptArgsParser import parse_script_args_dict
 from zenmapCore.NmapCommand import NmapCommand
 from zenmapCore.NmapOptions import NmapOptions
+from zenmapCore.xml_sax_secure import configure_secure_sax_parser
 import zenmapCore.NSEDocParser
 import zenmapGUI.FileChoosers
 from zenmapCore.UmitConf import PathsConfig
@@ -149,6 +150,7 @@ class ScriptHelpXMLContentHandler (xml.sax.handler.ContentHandler):
     @staticmethod
     def parse_nmap_script_help(f):
         parser = xml.sax.make_parser()
+        configure_secure_sax_parser(parser)
         handler = ScriptHelpXMLContentHandler()
         parser.setContentHandler(handler)
         parser.parse(f)

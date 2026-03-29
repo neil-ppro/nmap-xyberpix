@@ -127,7 +127,8 @@ class NdiffCommand(subprocess.Popen):
                 )
 
         log.debug("Running command: %s" % repr(command_list))
-        # shell argument explained in zenmapCore.NmapCommand.py
+        # Never use shell=True: argv is a list (like NmapCommand.run_scan); a shell
+        # is unnecessary on Windows and would reintroduce metacharacter injection risk.
         subprocess.Popen.__init__(
                 self,
                 command_list,
@@ -135,7 +136,7 @@ class NdiffCommand(subprocess.Popen):
                 stdout=self.stdout_file,
                 stderr=subprocess.PIPE,
                 env=env,
-                shell=(sys.platform == "win32")
+                shell=False,
                 )
 
     def get_scan_diff(self):

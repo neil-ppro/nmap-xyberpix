@@ -69,16 +69,20 @@ xml.__path__ = [x for x in xml.__path__ if "_xmlplus" not in x]
 
 from xml.sax import make_parser
 from xml.sax import SAXException
-from xml.sax.handler import ContentHandler, EntityResolver
+from xml.sax.handler import ContentHandler
 from xml.sax.saxutils import XMLGenerator
 from xml.sax.xmlreader import AttributesImpl as Attributes
 
 import zenmapCore.I18N  # lgtm[py/unused-import]
+from zenmapCore.xml_sax_secure import configure_secure_sax_parser
 from zenmapCore.NmapOptions import NmapOptions, join_quoted
 from zenmapCore.StringPool import unique
 
 # The version of the Nmap DTD this file understands and emits.
 XML_OUTPUT_VERSION = "1.04"
+
+# Cap <output type="interactive"> text to limit memory on malicious XML.
+_MAX_INTERACTIVE_OUTPUT_CHARS = 32 * 1024 * 1024
 
 
 class HostInfo(object):
@@ -731,6 +735,7 @@ class NmapParserSAX(ParserBasics, ContentHandler):
         self.filename = None
 
         self.unsaved = False
+        self._interactive_output_chars = 0
 
     def set_parser(self, parser):
         self.parser = parser
@@ -767,6 +772,7 @@ class NmapParserSAX(ParserBasics, ContentHandler):
             raise SAXException("Unexpected nested \"output\" element.")
         self.in_interactive_output = True
         self.nmap_output = ""
+        self._interactive_output_chars = 0
 
     def _parse_scaninfo(self, attrs):
         dic = {}
@@ -996,8 +1002,15 @@ class NmapParserSAX(ParserBasics, ContentHandler):
             self.in_trace = False
 
     def characters(self, content):
-        if self.in_interactive_output:
-            self._nmap_output.write(content)
+        if not self.in_interactive_output:
+            return
+        if self._interactive_output_chars >= _MAX_INTERACTIVE_OUTPUT_CHARS:
+            return
+        remain = _MAX_INTERACTIVE_OUTPUT_CHARS - self._interactive_output_chars
+        if len(content) > remain:
+            content = content[:remain]
+        self._nmap_output.write(content)
+        self._interactive_output_chars += len(content)
 
     def write_text(self, f):
         """Write the Nmap text output of this object to the file-like object
@@ -1293,21 +1306,12 @@ class NmapParserSAX(ParserBasics, ContentHandler):
         return self.unsaved
 
 
-class OverrideEntityResolver(EntityResolver):
-    """This class overrides the default behavior of xml.sax to download
-    remote DTDs, instead returning blank strings"""
-    empty = StringIO()
-
-    def resolveEntity(self, publicId, systemId):
-        return OverrideEntityResolver.empty
-
-
 def nmap_parser_sax():
     parser = make_parser()
+    configure_secure_sax_parser(parser)
     nmap_parser = NmapParserSAX()
 
     parser.setContentHandler(nmap_parser)
-    parser.setEntityResolver(OverrideEntityResolver())
     nmap_parser.set_parser(parser)
 
     return nmap_parser

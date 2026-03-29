@@ -16,7 +16,7 @@ Operators who need the full Nmap CLI from MCP must set **`NMAP_MCP_ALLOW_UNSAFE_
 
 | Variable | Effect |
 |----------|--------|
-| `NMAP_MCP_BINARY` | Path to `nmap` if not on `PATH`. |
+| `NMAP_MCP_BINARY` | Path to `nmap` if not on `PATH` (must be a real executable file; no shell metacharacters). |
 | `NMAP_MCP_ALLOW_ANY_TARGET` | Must be `1` for non-loopback targets when the tool uses `network_scope=any`. |
 | `NMAP_MCP_ALLOW_UNSAFE_CLI` | Must be `1` to allow NSE, `-iL`, file outputs, `--datadir`, etc. |
 | `NMAP_MCP_DATADIR` | Repository root (contains `scripts/`, `nselib/`) for fork scripts without unsafe CLI; used by offsec presets. |
@@ -35,13 +35,17 @@ Curated **offsec presets** (`nmap_offsec_*`) use a fixed allowlisted `--script` 
 | SIEM JSON fields and versioning | [../SIEM-NDJSON-SCHEMA.md](../SIEM-NDJSON-SCHEMA.md) |
 | SIEM pipeline examples (jq, Splunk, Elastic) | [../examples/siem/README.md](../examples/siem/README.md) |
 
+## Zenmap XML (SAX)
+
+Zenmap parses Nmap XML with **`xml.sax`** (same family as Python’s `xml.etree`). Parsers used for scan results, RadialNet, and `--script-help` XML are configured to **disable external general/parameter entities** and use an **empty entity resolver** so DTD resolution does not fetch remote resources. **`<output type="interactive">`** text is **capped** (32 MiB of character data) to limit memory when opening a hostile XML file; RadialNet caps text per element (4 MiB). Treat scan XML like untrusted input when it did not come from your own Nmap run.
+
 ## SIEM logging
 
-`--siem-log` writes **NDJSON** (one JSON object per line). Do not confuse with interactive Nmap stdout; ship lines that parse as JSON to your log pipeline. Failed SIEM **file** open emits a warning and the scan continues (syslog mirroring still works if enabled). See [SIEM-NDJSON-SCHEMA.md](../SIEM-NDJSON-SCHEMA.md).
+`--siem-log` writes **NDJSON** (one JSON object per line). Do not confuse with interactive Nmap stdout; ship lines that parse as JSON to your log pipeline. Failed SIEM **file** open emits a warning and the scan continues (syslog mirroring still works if enabled). The **`scan_start`** `args` field is a **UTF-8 prefix** of the quoted command line (currently **128 KiB** max) before JSON escaping, so pathological argv does not grow unbounded log lines. See [SIEM-NDJSON-SCHEMA.md](../SIEM-NDJSON-SCHEMA.md).
 
 ## nfuzz (raw IPv4 packet fuzzer + HTTP browser fuzz server)
 
-The optional **`nfuzz`** binary (built with Nmap on Unix unless `./configure --without-nfuzz`) can send **mutated IPv4 datagrams** via a raw socket **or** run **`--http-daemon`**, a small HTTP server that returns a **fresh fuzzed HTML/JS page** on every request (for authorized DOM/JS engine testing in a lab). With **`--auto-browser`**, it can **spawn and supervise** a headless browser process pointed at that URL (optional periodic restart). By default the daemon binds to **loopback** only; **`--http-allow-remote`** is required to listen on other interfaces. It is **not** part of MCP and is not installed on MinGW/Cygwin builds. It refuses to run unless **`--authorized`** or **`NFUZZ_AUTHORIZED=1`** is set. Raw mode typically needs **superuser**; HTTP mode does not. Misuse can violate law or contract and can disrupt networks or crash browsers. See **`nfuzz(1)`**.
+The optional **`nfuzz`** binary (built with Nmap on Unix unless `./configure --without-nfuzz`) can send **mutated IPv4 datagrams** via a raw socket **or** run **`--http-daemon`**, a small HTTP server that returns a **fresh fuzzed HTML/JS page** on every request (for authorized DOM/JS engine testing in a lab). With **`--auto-browser`**, it can **spawn and supervise** a headless browser process pointed at that URL (optional periodic restart). **`--browser-cmd`**, **`NFUZZ_BROWSER_CMD`**, and each **`--browser-arg`** must be a single **`execvp`** token with **no ASCII control bytes** and no **`;|&` `$` or backtick** characters (defense in depth; there is no shell). HTTP requests are read with a **fixed buffer** (`nfuzz(1)`); responses do not interpret the request path (always the same fuzz page). By default the daemon binds to **loopback** only; **`--http-allow-remote`** is required to listen on other interfaces. It is **not** part of MCP and is not installed on MinGW/Cygwin builds. It refuses to run unless **`--authorized`** or **`NFUZZ_AUTHORIZED=1`** is set. Raw mode typically needs **superuser**; HTTP mode does not. Misuse can violate law or contract and can disrupt networks or crash browsers. See **`nfuzz(1)`**.
 
 ## NSE (offsec scripts)
 

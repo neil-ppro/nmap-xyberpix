@@ -514,6 +514,28 @@ static void nfuzz_sanitize_log_token(char *s)
   }
 }
 
+/* argv tokens for execvp: no shell, but reject control bytes and shell metacharacters. */
+static int nfuzz_browser_argv_token_safe(const char *s)
+{
+  if (s == NULL || *s == '\0')
+    return -1;
+  for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+    if (*p < 0x20u)
+      return -1;
+    switch ((char)*p) {
+    case ';':
+    case '|':
+    case '&':
+    case '`':
+    case '$':
+      return -1;
+    default:
+      break;
+    }
+  }
+  return 0;
+}
+
 /* http_status 0 means we dropped the connection without a valid response. */
 static void nfuzz_http_log_request(int do_detach, const struct sockaddr_in *peer,
     const char *req, ssize_t reqlen, int http_status, size_t resp_body)
@@ -661,6 +683,24 @@ static int run_http_daemon(const char *bind_spec, size_t max_body,
     memcpy(browser_cmd_buf, browser_cmd_resolved, cmdlen);
     browser_cmd_buf[cmdlen] = '\0';
     browser_cmd_resolved = browser_cmd_buf;
+    if (nfuzz_browser_argv_token_safe(browser_cmd_resolved) != 0) {
+      fprintf(stderr,
+          "nfuzz: --browser-cmd / NFUZZ_BROWSER_CMD must be one executable token "
+          "without shell metacharacters (|;`$&) or control bytes\n");
+      free(body);
+      close(ls);
+      return 2;
+    }
+    for (int bi = 0; bi < brw->browser_extra_n; bi++) {
+      if (nfuzz_browser_argv_token_safe(brw->browser_extra[bi]) != 0) {
+        fprintf(stderr,
+            "nfuzz: each --browser-arg must be a single token without "
+            ";|`$& or control bytes\n");
+        free(body);
+        close(ls);
+        return 2;
+      }
+    }
     fprintf(stderr, "nfuzz: auto-browser enabled (%s -> %s)\n",
         browser_cmd_resolved, browser_url);
   }

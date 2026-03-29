@@ -300,7 +300,18 @@ _OFFSEC_PRESETS: dict[str, dict[str, Any]] = {
 def _nmap_binary() -> str:
     explicit = os.environ.get(_ENV_NMAP_BINARY, "").strip()
     if explicit:
-        return explicit
+        _validate_argv_fragment(explicit, label=_ENV_NMAP_BINARY)
+        resolved = os.path.realpath(explicit)
+        if not os.path.isfile(resolved):
+            raise RuntimeError(
+                f"{_ENV_NMAP_BINARY} must be a regular file: {explicit!r} "
+                f"(resolved {resolved!r})."
+            )
+        if os.name != "nt" and not os.access(resolved, os.X_OK):
+            raise RuntimeError(
+                f"{_ENV_NMAP_BINARY} is not executable: {resolved!r}."
+            )
+        return resolved
     found = shutil.which("nmap")
     if not found:
         raise RuntimeError(

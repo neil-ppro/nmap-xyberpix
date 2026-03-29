@@ -28,6 +28,8 @@
 
 #define SIEM_HOSTNAME_LEN 256
 #define SIEM_SCHEMA_VERSION 1
+/* Cap command line in scan_start JSON (join_quoted can be huge); UTF-8 safe prefix. */
+#define SIEM_MAX_ARGS_UTF8_BYTES 131072
 
 static FILE *siem_fp;
 #ifndef WIN32
@@ -41,6 +43,22 @@ static HANDLE siem_win_event_source;
 static char *siem_tag;
 static char siem_scan_id[64];
 static char siem_scanner_host[SIEM_HOSTNAME_LEN];
+
+/* Truncate s to at most max_bytes UTF-8 without splitting a multibyte character. */
+static std::string siem_utf8_prefix(const char *s, size_t max_bytes) {
+  std::string out;
+  if (!s || max_bytes == 0)
+    return out;
+  size_t n = strlen(s);
+  if (n <= max_bytes) {
+    out.assign(s, n);
+    return out;
+  }
+  out.assign(s, max_bytes);
+  while (!out.empty() && ((unsigned char)out.back() & 0xc0) == 0x80)
+    out.pop_back();
+  return out;
+}
 
 static std::string json_escape(const char *s) {
   std::string out;
@@ -397,7 +415,14 @@ void siem_log_scan_start(const char *args_quoted) {
 #endif
   line += pidbuf;
   line += ",\"args\":";
-  line += args_quoted ? "\"" + json_escape(args_quoted) + "\"" : "null";
+  if (args_quoted && *args_quoted) {
+    std::string prefix = siem_utf8_prefix(args_quoted, SIEM_MAX_ARGS_UTF8_BYTES);
+    line += "\"";
+    line += json_escape(prefix.c_str());
+    line += "\"";
+  } else {
+    line += "null";
+  }
   line += "}";
   siem_write_line(line);
 }

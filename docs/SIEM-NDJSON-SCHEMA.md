@@ -30,7 +30,7 @@ When incrementing **`schema_version`**, update this file and [CHANGELOG](../CHAN
 | `nmap_version` | string | Nmap version string. |
 | `platform` | string | Build platform (`NMAP_PLATFORM`). |
 | `pid` | integer | Process ID of the Nmap process. |
-| `args` | string or `null` | Quoted command line (escaped JSON string) or `null` if unavailable. |
+| `args` | string or `null` | Quoted command line (escaped JSON string) or `null` if unavailable. If the joined argv exceeds **128 KiB** UTF-8, it is truncated to a UTF-8-safe prefix before escaping (same `schema_version`). |
 
 ### `scan_end`
 

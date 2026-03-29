@@ -109,6 +109,10 @@ Executable name or path for
 .B NFUZZ_BROWSER_CMD
 from the environment, or
 .BR chromium ).
+Must be a single
+.BR execvp (3)
+token: no ASCII control bytes or shell metacharacters
+.RB ( ; | ` $ & ).
 .TP
 .BI \-\-browser\-preset " NAME"
 Headless-oriented defaults prepended before
@@ -147,6 +151,8 @@ as the host unless overridden here.
 .TP
 .BI \-\-browser\-arg " ARG"
 Extra argument inserted before the URL (repeatable; maximum 32).
+Each argument must satisfy the same token rules as
+.BR \-\-browser\-cmd .
 .SS Raw IPv4 mode
 .TP
 .BI \-\-dst " ADDR"

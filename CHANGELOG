@@ -1,5 +1,24 @@
 #Nmap Changelog ($Id$); -*-text-*-
 
+o [nmap-xyberpix] Security / robustness: **Zenmap** SAX parsers now disable
+  **external XML entities**, use an empty **entity resolver**, and cap memory for
+  large **interactive output** text (32 MiB) and **RadialNet** per-element text
+  (4 MiB). **SIEM** `scan_start` **`args`** is truncated to a **128 KiB** UTF-8
+  prefix before JSON escaping. **nfuzz** rejects **`--browser-cmd` /
+  NFUZZ_BROWSER_CMD / --browser-arg** tokens that contain control bytes or
+  shell metacharacters (;, |, &, `, $). Documented in **SECURITY-OVERVIEW**,
+  **SIEM-NDJSON-SCHEMA**, and **nfuzz(1)**.
+
+o [nmap-xyberpix] Security: Zenmap **Ndiff** subprocess now uses **shell=False**
+  on all platforms (argv list only; removes unnecessary **shell=True** on Windows).
+  **mcp-nmap-server** validates **NMAP_MCP_BINARY** like other argv fragments and
+  requires a regular executable file when set (see **SECURITY-OVERVIEW**).
+
+o [nmap-xyberpix] CI: bump GitHub Actions to Node 24–compatible majors
+  (`actions/checkout@v6`, `actions/setup-python@v6`, `actions/upload-artifact@v7`,
+  `actions/download-artifact@v8`, `docker/setup-qemu-action@v4`) to avoid deprecated
+  Node.js 20 action runtimes.
+
 o [nmap-xyberpix] **xyberpix-gui**: Nmap page exposes a broad set of **nmap --help**
   options as **dropdown menus** (host discovery, scan techniques, ports, NSE, OS,
   timing, evasion, output, SIEM, fork flags, etc.) plus companion text fields for

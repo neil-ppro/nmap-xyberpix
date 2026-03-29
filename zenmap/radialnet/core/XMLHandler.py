@@ -65,6 +65,8 @@ import xml.sax
 import xml.sax.saxutils
 from xml.sax.xmlreader import AttributesImpl as Attributes
 
+from zenmapCore.xml_sax_secure import configure_secure_sax_parser
+
 
 class XMLNode:
     """
@@ -246,6 +248,7 @@ class XMLReader(xml.sax.ContentHandler):
         self.__root = None
 
         self.__parser = xml.sax.make_parser()
+        configure_secure_sax_parser(self.__parser)
         self.__parser.setContentHandler(self)
 
     def set_file(self, file, root):
@@ -309,7 +312,13 @@ class XMLReader(xml.sax.ContentHandler):
     def characters(self, text):
         """
         """
-        self.__text += text
+        # Bound per-element text to limit memory on hostile scan XML.
+        _max = 4 * 1024 * 1024
+        if len(self.__text) < _max:
+            take = text
+            if len(self.__text) + len(take) > _max:
+                take = take[: max(0, _max - len(self.__text))]
+            self.__text += take
 
 
 if __name__ == "__main__":

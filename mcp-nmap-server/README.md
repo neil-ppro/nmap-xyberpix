@@ -9,7 +9,7 @@ This package lives in the **nmap-xyberpix** tree and is **not** part of the core
 ## Requirements
 
 - Python 3.10+
-- `nmap` on `PATH` (or set `NMAP_MCP_BINARY` to the executable path)
+- `nmap` on `PATH` (or set `NMAP_MCP_BINARY` to the real path of the executable; the server rejects shell metacharacters and non-files)
 - `pip install -e .` or `pip install .` from this directory (pulls in the `mcp` and `defusedxml` packages)
 
 ## Output limits (robustness)

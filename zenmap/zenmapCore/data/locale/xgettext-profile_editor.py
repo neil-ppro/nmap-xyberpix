@@ -12,8 +12,30 @@ import xml
 xml.__path__ = [x for x in xml.__path__ if "_xmlplus" not in x]
 
 import xml.sax
+import xml.sax.xmlreader as xmlreader
+from io import StringIO
+from xml.sax.handler import EntityResolver
 
 directory = None
+
+
+class _EmptyEntityResolver(EntityResolver):
+    _empty = StringIO()
+
+    def resolveEntity(self, publicId, systemId):
+        return _EmptyEntityResolver._empty
+
+
+def _configure_secure_sax_parser(parser):
+    for feat, val in (
+        (xmlreader.feature_external_ges, False),
+        (xmlreader.feature_external_pes, False),
+    ):
+        try:
+            parser.setFeature(feat, val)
+        except (xml.sax.SAXNotRecognizedException, xml.sax.SAXNotSupportedException):
+            pass
+    parser.setEntityResolver(_EmptyEntityResolver())
 
 
 def escape(s):
@@ -50,10 +72,6 @@ if directory is not None:
 for fn in filenames:
     with open(fn, "rb") as f:
         parser = xml.sax.make_parser()
+        _configure_secure_sax_parser(parser)
         parser.setContentHandler(Handler())
         parser.parse(f)
-
-if len(filenames) < 2:
-    parser = xml.sax.make_parser()
-    parser.setContentHandler(Handler())
-    parser.parse
