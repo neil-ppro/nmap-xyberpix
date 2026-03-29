@@ -5,10 +5,11 @@ from __future__ import annotations
 import shlex
 from collections.abc import Callable
 
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QProcess, QSettings, Qt
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
+    QFileDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -24,6 +25,15 @@ from PySide6.QtWidgets import (
 )
 
 from xyberpix_gui.argv_utils import ArgvAssemblyError, extend_argv_from_fragment, validate_argv_list
+from xyberpix_gui.nmap_builtin_profiles import get_builtin_by_id, list_builtin_nmap_profiles
+from xyberpix_gui.nmap_nfuzz_handoff import (
+    OpenPortRow,
+    format_suggestion_lines,
+    load_ports_from_file,
+    parse_grepable_nmap,
+    parse_normal_nmap_output,
+    suggest_nfuzz_argv_fragment,
+)
 from xyberpix_gui.nmap_option_catalog import COMBO_SPECS, LINE_SPECS
 from xyberpix_gui.nmap_profile_store import delete_profile, get_profile, list_names, put_profile
 from xyberpix_gui.widgets import ProcessRunner
@@ -35,10 +45,16 @@ class NmapPage(QWidget):
         resolve: Callable[[str], str | None],
         settings: QSettings,
         parent: QWidget | None = None,
+        *,
+        on_nfuzz_handoff: Callable[[str], None] | None = None,
+        focus_nfuzz_sidebar: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(parent)
         self._resolve = resolve
         self._settings = settings
+        self._on_nfuzz_handoff = on_nfuzz_handoff
+        self._focus_nfuzz = focus_nfuzz_sidebar
+        self._ngit_proc: QProcess | None = None
         self._combos: dict[str, QComboBox] = {}
         self._lines: dict[str, QLineEdit] = {}
 
@@ -104,6 +120,29 @@ class NmapPage(QWidget):
         copy.setObjectName("secondary")
         copy.clicked.connect(self._copy_cmd)
 
+        handoff_file = QPushButton("nfuzz: suggest from Nmap file…")
+        handoff_file.setObjectName("secondary")
+        handoff_file.clicked.connect(self._handoff_from_file)
+        handoff_out = QPushButton("nfuzz: suggest from last output")
+        handoff_out.setObjectName("secondary")
+        handoff_out.clicked.connect(self._handoff_from_last_output)
+
+        eng = QGroupBox("ngit → SIEM (optional audit line)")
+        eng.setObjectName("subtitle")
+        ef = QFormLayout(eng)
+        self._ngit_repo = QLineEdit()
+        self._ngit_repo.setPlaceholderText("OWNER/NAME (public repo)")
+        self._ngit_siem = QLineEdit()
+        self._ngit_siem.setPlaceholderText("Same NDJSON file as Nmap --siem-log (append)")
+        self._ngit_siem_tag = QLineEdit()
+        self._ngit_siem_tag.setPlaceholderText("Optional --siem-tag (engagement label)")
+        ng_btn = QPushButton("Run ngit → append SIEM summary")
+        ng_btn.clicked.connect(self._run_ngit_siem)
+        ef.addRow("Repository", self._ngit_repo)
+        ef.addRow("SIEM log path", self._ngit_siem)
+        ef.addRow("SIEM tag", self._ngit_siem_tag)
+        ef.addRow("", ng_btn)
+
         self._runner = ProcessRunner()
         self._runner.run_requested.connect(self._run)
 
@@ -114,8 +153,11 @@ class NmapPage(QWidget):
         top.addWidget(scroll, stretch=1)
         row = QHBoxLayout()
         row.addWidget(copy)
+        row.addWidget(handoff_file)
+        row.addWidget(handoff_out)
         row.addStretch()
         top.addLayout(row)
+        top.addWidget(eng)
         top.addWidget(self._runner)
 
         QVBoxLayout(self).addLayout(top)
@@ -125,6 +167,8 @@ class NmapPage(QWidget):
         self._profile_pick.blockSignals(True)
         self._profile_pick.clear()
         self._profile_pick.addItem("— Current (unsaved) —", "")
+        for bp in list_builtin_nmap_profiles():
+            self._profile_pick.addItem(f"★ Built-in: {bp.title}", f"builtin:{bp.id}")
         for name in list_names(self._settings):
             self._profile_pick.addItem(name, name)
         if select_name:
@@ -136,10 +180,26 @@ class NmapPage(QWidget):
     def _on_profile_activated(self, index: int) -> None:
         if index <= 0:
             return
-        name = self._profile_pick.itemData(index, Qt.UserRole)
-        if not name or not isinstance(name, str):
+        token = self._profile_pick.itemData(index, Qt.UserRole)
+        if not token or not isinstance(token, str):
             return
-        state = get_profile(self._settings, name)
+        if token.startswith("builtin:"):
+            bid = token[8:]
+            meta = get_builtin_by_id(bid)
+            if not meta:
+                return
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Information)
+            box.setWindowTitle("Built-in checklist profile")
+            box.setText(meta.title)
+            box.setInformativeText(meta.summary)
+            box.setDetailedText(meta.detail)
+            box.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+            if box.exec() != QMessageBox.Ok:
+                return
+            self._apply_state(meta.state)
+            return
+        state = get_profile(self._settings, token)
         if not state:
             return
         self._apply_state(state)
@@ -183,6 +243,9 @@ class NmapPage(QWidget):
             return
         name = self._profile_pick.itemData(idx, Qt.UserRole)
         if not name or not isinstance(name, str):
+            return
+        if name.startswith("builtin:"):
+            QMessageBox.information(self, "Delete profile", "Built-in profiles cannot be deleted.")
             return
         if (
             QMessageBox.question(
@@ -309,3 +372,136 @@ class NmapPage(QWidget):
             self._runner.output.append_line(f"Error: {e.message}")
             return
         self._runner.start(exe, args)
+
+    def _handoff_from_file(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Nmap output file", "", "Any (*)")
+        if not path:
+            return
+        fmt, ok = QInputDialog.getItem(
+            self,
+            "File format",
+            "How was this file produced?",
+            ["Grepable (-oG)", "XML (-oX)"],
+            0,
+            False,
+        )
+        if not ok:
+            return
+        try:
+            fmt_key = "grepable" if fmt.startswith("Grepable") else "xml"
+            rows = load_ports_from_file(path, fmt_key)
+        except (OSError, ValueError) as e:
+            QMessageBox.warning(self, "Handoff", str(e))
+            return
+        if not rows:
+            QMessageBox.information(self, "Handoff", "No open ports found.")
+            return
+        self._show_nfuzz_handoff_dialog(rows)
+
+    def _handoff_from_last_output(self) -> None:
+        text = self._runner.output.plain_text()
+        if not text.strip():
+            QMessageBox.information(
+                self, "Handoff", "Run Nmap first, or use “suggest from Nmap file”."
+            )
+            return
+        hint = self._lines["targets"].text().strip().split()
+        default_host = hint[0] if hint else "127.0.0.1"
+        host, ok = QInputDialog.getText(
+            self,
+            "Host for table parse",
+            "If the output is not grepable, parsed PORT lines use this host:",
+            text=default_host,
+        )
+        if not ok:
+            return
+        host = host.strip() or default_host
+        rows = parse_grepable_nmap(text)
+        if not rows:
+            rows = parse_normal_nmap_output(text, host)
+        if not rows:
+            QMessageBox.information(
+                self,
+                "Handoff",
+                "No open ports found. Save as grepable (-oG) or XML (-oX) for best results.",
+            )
+            return
+        self._show_nfuzz_handoff_dialog(rows)
+
+    def _show_nfuzz_handoff_dialog(self, rows: list[OpenPortRow]) -> None:
+        lines = format_suggestion_lines(rows)
+        box = QMessageBox(self)
+        box.setWindowTitle("nfuzz handoff (explicit action)")
+        box.setText(
+            f"{len(rows)} open port row(s). This does not run nfuzz until you click Run on the nfuzz tab."
+        )
+        box.setDetailedText(lines)
+        box.setIcon(QMessageBox.Information)
+        apply_b = box.addButton("Apply first row to nfuzz tab", QMessageBox.AcceptRole)
+        copy_b = box.addButton("Copy suggestions", QMessageBox.ActionRole)
+        box.addButton(QMessageBox.Close)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked == copy_b:
+            QApplication.clipboard().setText(lines)
+        elif clicked == apply_b and rows and self._on_nfuzz_handoff:
+            frag = suggest_nfuzz_argv_fragment(rows[0])
+            if self._focus_nfuzz:
+                self._focus_nfuzz()
+            self._on_nfuzz_handoff(frag)
+
+    def _run_ngit_siem(self) -> None:
+        repo = self._ngit_repo.text().strip()
+        siem_path = self._ngit_siem.text().strip()
+        if not repo or not siem_path:
+            QMessageBox.warning(self, "ngit", "Enter repository (OWNER/NAME) and SIEM log path.")
+            return
+        if repo.count("/") != 1 or repo.startswith("/") or repo.endswith("/"):
+            QMessageBox.warning(self, "ngit", "Repository must be exactly OWNER/NAME (one slash).")
+            return
+        if (
+            QMessageBox.question(
+                self,
+                "Authorization",
+                "Run ngit only on repositories you own or are explicitly permitted to assess. Continue?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            != QMessageBox.Yes
+        ):
+            return
+        exe = self._resolve("ngit")
+        if not exe:
+            self._runner.output.append_line(
+                "Error: ngit not found. Set “ngit” path in Settings or ensure ngit/ngit is executable."
+            )
+            return
+        tag = self._ngit_siem_tag.text().strip()
+        args: list[str] = ["--authorized", "--repo", repo, "--siem-log", siem_path]
+        if tag:
+            args.extend(["--siem-tag", tag])
+        if self._ngit_proc is not None and self._ngit_proc.state() != QProcess.NotRunning:
+            self._runner.output.append_line("ngit: already running.")
+            return
+        self._ngit_proc = QProcess(self)
+        self._ngit_proc.setProcessChannelMode(QProcess.MergedChannels)
+        self._ngit_proc.setProgram(exe)
+        self._ngit_proc.setArguments(args)
+        self._ngit_proc.readyReadStandardOutput.connect(self._on_ngit_out)
+        self._ngit_proc.finished.connect(self._on_ngit_finished)
+        self._runner.output.append_line(f"Starting ngit: {shlex.join([exe, *args])}")
+        self._ngit_proc.start()
+
+    def _on_ngit_out(self) -> None:
+        if self._ngit_proc is None:
+            return
+        data = bytes(self._ngit_proc.readAllStandardOutput()).decode("utf-8", errors="replace")
+        if data:
+            self._runner.output.append(data)
+
+    def _on_ngit_finished(self) -> None:
+        if self._ngit_proc is None:
+            return
+        code = self._ngit_proc.exitCode()
+        self._runner.output.append_line(f"ngit finished (exit {code}).")
+        self._ngit_proc = None

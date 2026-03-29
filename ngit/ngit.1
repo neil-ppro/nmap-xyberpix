@@ -194,6 +194,22 @@ and/or
 .B \-v ", " \-\-verbose
 Progress and rate\-limit hints on standard error.
 .TP
+.BI \-\-siem\-log " PATH"
+After a successful run, append one NDJSON line to
+.I PATH
+(event
+.BR ngit_scan_summary ;
+same
+.B schema_version
+style as Nmap
+.BR \-\-siem\-log ).
+Contains repository and finding
+.B counts
+only, never matched secret text.
+.TP
+.BI \-\-siem\-tag " TAG"
+Optional string stored in the SIEM summary line (e.g. engagement label).
+.TP
 .B \-\-version
 Print version and exit.
 .SH EXAMPLES

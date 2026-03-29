@@ -26,7 +26,7 @@ if sys.version_info < (3, 9):
     print("ngit: Python 3.9 or newer is required", file=sys.stderr)
     sys.exit(2)
 
-__version__ = "0.4.2"
+__version__ = "0.4.3"
 
 USER_AGENT = "ngit/{} (nmap-xyberpix; security research)".format(__version__)
 GITHUB_API = "https://api.github.com"
@@ -824,6 +824,36 @@ def parse_extra_regex_args(items: list[str] | None) -> list[tuple[str, re.Patter
     return out
 
 
+def append_ngit_siem_summary(
+    path: str,
+    *,
+    tag: str | None,
+    summary: dict[str, object],
+) -> None:
+    """Append one NDJSON line (no secret values). Aligns with nmap SIEM-style fields."""
+    import socket
+    from datetime import datetime, timezone
+
+    if "\x00" in path or len(path) > 4096:
+        raise ValueError("invalid --siem-log path")
+    hostname = socket.gethostname()[:256]
+    rec: dict[str, object] = {
+        "schema_version": 1,
+        "event": "ngit_scan_summary",
+        "ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "scanner_hostname": hostname,
+        "ngit_version": __version__,
+    }
+    if tag:
+        rec["tag"] = tag[:512]
+    for k, v in summary.items():
+        if v is not None:
+            rec[k] = v
+    line = json.dumps(rec, separators=(",", ":"), ensure_ascii=False) + "\n"
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(line)
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         description="Scan GitHub repositories for common secret/password patterns (authorized use only)."
@@ -919,6 +949,16 @@ def main(argv: list[str] | None = None) -> int:
         "(no built-in secret regex or PEM scan). Requires --keyword and/or --keyword-file",
     )
     p.add_argument("--verbose", "-v", action="store_true")
+    p.add_argument(
+        "--siem-log",
+        metavar="PATH",
+        help="Append one NDJSON summary line after the run (event ngit_scan_summary; counts only, no secrets)",
+    )
+    p.add_argument(
+        "--siem-tag",
+        metavar="TAG",
+        help="Optional label stored in the SIEM summary line (e.g. engagement id)",
+    )
     p.add_argument("--version", action="store_true")
     args = p.parse_args(argv)
 
@@ -1037,6 +1077,23 @@ def main(argv: list[str] | None = None) -> int:
         )
         if args.verbose:
             print("ngit: {} finding(s) in {}".format(n, fn), file=sys.stderr)
+        if args.siem_log:
+            try:
+                append_ngit_siem_summary(
+                    args.siem_log.strip(),
+                    tag=((args.siem_tag or "").strip() or None),
+                    summary={
+                        "repos_scanned": 1,
+                        "findings_count": int(n),
+                        "repo_primary": fn,
+                    },
+                )
+            except OSError as e:
+                print("ngit: could not append --siem-log: {}".format(e), file=sys.stderr)
+                return 1
+            except ValueError as e:
+                print("ngit: {}".format(e), file=sys.stderr)
+                return 2
         return 0
 
     if args.scan_count <= 0:
@@ -1080,6 +1137,23 @@ def main(argv: list[str] | None = None) -> int:
             "ngit: finished {} repo(s), {} finding(s)".format(scanned, total_hits),
             file=sys.stderr,
         )
+    if args.siem_log:
+        try:
+            append_ngit_siem_summary(
+                args.siem_log.strip(),
+                tag=((args.siem_tag or "").strip() or None),
+                summary={
+                    "repos_scanned": int(scanned),
+                    "findings_count": int(total_hits),
+                    "repo_primary": None,
+                },
+            )
+        except OSError as e:
+            print("ngit: could not append --siem-log: {}".format(e), file=sys.stderr)
+            return 1
+        except ValueError as e:
+            print("ngit: {}".format(e), file=sys.stderr)
+            return 2
     return 0
 
 

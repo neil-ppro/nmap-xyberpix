@@ -54,6 +54,7 @@ class SettingsDialog(QDialog):
             ("nping", "nping"),
             ("ncat", "ncat"),
             ("nfuzz", "nfuzz"),
+            ("ngit", "ngit"),
         ):
             row = QWidget()
             h = QHBoxLayout(row)
@@ -124,10 +125,18 @@ class MainWindow(QMainWindow):
         home.open_tool.connect(stack.setCurrentIndex)
         home.open_settings.connect(self._open_settings)
         stack.addWidget(home)
-        stack.addWidget(NmapPage(self._resolver, self._settings))
+        nfuzz = NfuzzPage(self._resolver)
+        stack.addWidget(
+            NmapPage(
+                self._resolver,
+                self._settings,
+                on_nfuzz_handoff=nfuzz.apply_handoff_argv,
+                focus_nfuzz_sidebar=lambda: side.setCurrentRow(4),
+            )
+        )
         stack.addWidget(NpingPage(self._resolver))
         stack.addWidget(NcatPage(self._resolver))
-        stack.addWidget(NfuzzPage(self._resolver))
+        stack.addWidget(nfuzz)
         stack.addWidget(McpPage())
 
         side.currentRowChanged.connect(stack.setCurrentIndex)

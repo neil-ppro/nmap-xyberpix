@@ -82,6 +82,27 @@ When incrementing **`schema_version`**, update this file and [CHANGELOG](../CHAN
 | `service_devicetypes` | string | CSV-style device hints. |
 | `service_cpes` | string | CSV-style CPE strings. |
 
+### `ngit_scan_summary`
+
+Emitted by **`ngit --siem-log`** after a successful run (append mode). Same top-level **`schema_version`**, **`ts`**, **`scanner_hostname`** style as other SIEM lines. **Never** includes matched secret text—only aggregate counts.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `event` | string | Always **`ngit_scan_summary`**. |
+| `ngit_version` | string | ngit version string. |
+| `repos_scanned` | integer | Repositories processed in this invocation. |
+| `findings_count` | integer | Total findings reported (same counting as ngit stderr summaries). |
+| `repo_primary` | string or `null` | With **`--repo`**, the `OWNER/NAME` scanned; with **`--scan-count`**, `null`. |
+| `tag` | string | Present if **`--siem-tag`** was set. |
+
+### `nfuzz` lab audit line (stderr, not NDJSON file)
+
+**nfuzz** does not write the SIEM file directly. With **`--lab-audit-tag`**, it prints one line to **standard error**:
+
+`NFUZZ_LAB_AUDIT_JSON:{...}`
+
+The payload is a single JSON object with **`schema_version`**, **`event`** (`nfuzz_lab_start`), **`nfuzz_version`**, **`tag`**, **`http_daemon`**, **`stream_proto`**, **`slow_tcp_chunk`**, **`slow_tcp_delay_ms`**, **`dport`**. Operators may route stderr to a collector or wrap it into their NDJSON pipeline.
+
 ## Integration examples
 
 See [docs/examples/siem/README.md](examples/siem/README.md) for jq, Splunk, and Elastic/Filebeat-oriented snippets.

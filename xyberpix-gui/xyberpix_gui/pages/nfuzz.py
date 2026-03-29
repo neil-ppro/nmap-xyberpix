@@ -58,11 +58,23 @@ class NfuzzPage(QWidget):
         self._raw_extra.setPlaceholderText(
             "e.g. --template icmp-echo --payload-len 64 (split with shlex; no shell)"
         )
+        self._lab_preset = QComboBox()
+        self._lab_preset.addItem("Lab preset: off", "")
+        self._lab_preset.addItem("Polite stream (rate cap + audit tag)", "polite_stream")
+        self._lab_preset.addItem("Slow TCP chunks (lab warning; --proto tcp)", "slow_tcp")
+        self._lab_preset.addItem("PCAP base + polite rate (set path below)", "pcap_polite")
+        self._pcap_path = QLineEdit()
+        self._pcap_path.setPlaceholderText("For PCAP preset: path to .pcap (IPv4)")
+        self._lab_audit_tag = QLineEdit()
+        self._lab_audit_tag.setPlaceholderText("Optional --lab-audit-tag (A-Za-z0-9._-)")
         rf = QFormLayout(raw)
         rf.addRow("Template / mode", self._tpl)
         rf.addRow("Destination host", self._host)
         rf.addRow("Destination port", self._dport)
         rf.addRow("Source port (0=auto)", self._sport)
+        rf.addRow("Lab preset", self._lab_preset)
+        rf.addRow("PCAP file", self._pcap_path)
+        rf.addRow("Lab audit tag", self._lab_audit_tag)
         rf.addRow("Extra args", self._raw_extra)
         tabs.addTab(raw, "Raw / template")
 
@@ -98,12 +110,53 @@ class NfuzzPage(QWidget):
 
         QVBoxLayout(self).addLayout(top)
 
+    def apply_handoff_argv(self, fragment: str) -> None:
+        """Fill stream-oriented nfuzz args from Nmap handoff (user still clicks Run)."""
+        self._tabs.setCurrentIndex(0)
+        self._raw_extra.setText(fragment.strip())
+
+    def _lab_preset_tail(self, key: str) -> tuple[list[str], str | None]:
+        """Extra argv after base (no --pcap path here). Returns (argv, default_audit_tag)."""
+        tag = self._lab_audit_tag.text().strip()
+        out: list[str] = []
+        default_tag: str | None = None
+        if key == "polite_stream":
+            out.extend(["-r", "10", "-c", "220", "-S", "random_byte", "--proto-payload-len", "256"])
+            default_tag = "xyberpix_polite_stream"
+        elif key == "slow_tcp":
+            out.extend(["--lab-slow-tcp-send", "-r", "2", "-c", "60"])
+            default_tag = "xyberpix_slow_tcp"
+        elif key == "pcap_polite":
+            out.extend(["-r", "6", "-c", "120", "-S", "bitflip"])
+            default_tag = "xyberpix_pcap_polite"
+        use_tag = tag or default_tag
+        if use_tag:
+            out.extend(["--lab-audit-tag", use_tag])
+        return out, default_tag
+
     def _build_args(self) -> list[str]:
         if self._tabs.currentIndex() == 0:
             args: list[str] = []
             ex = self._raw_extra.text().strip()
+            preset_key = self._lab_preset.currentData()
+            pcap_mode = (
+                isinstance(preset_key, str)
+                and preset_key == "pcap_polite"
+                and self._pcap_path.text().strip()
+            )
             if ex:
                 extend_argv_from_fragment(args, ex, what="nfuzz extra args")
+            elif pcap_mode:
+                p = self._pcap_path.text().strip()
+                args.extend(["--pcap", p, "--pcap-index", "1"])
+                h = self._host.text().strip()
+                if h:
+                    args.extend(["--dst", h])
+                args.extend(["--dport", str(self._dport.value())])
+                if self._sport.value() > 0:
+                    args.extend(["--sport", str(self._sport.value())])
+                tail, _ = self._lab_preset_tail("pcap_polite")
+                args.extend(tail)
             else:
                 tpl = self._tpl.currentText().strip()
                 if tpl:
@@ -114,6 +167,9 @@ class NfuzzPage(QWidget):
                 args.extend(["--dport", str(self._dport.value())])
                 if self._sport.value() > 0:
                     args.extend(["--sport", str(self._sport.value())])
+                if isinstance(preset_key, str) and preset_key in ("polite_stream", "slow_tcp"):
+                    tail, _ = self._lab_preset_tail(preset_key)
+                    args.extend(tail)
             validate_argv_list(args, what="nfuzz arguments")
             return args
         args = []

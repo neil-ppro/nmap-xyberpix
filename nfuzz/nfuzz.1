@@ -236,6 +236,34 @@ TCP only: perform a fresh connect for each iteration (default is one connection 
 .TP
 .BI \-\-proto\-connect\-timeout " SEC"
 TCP connect wait in seconds (default 10, range 1\(en300).
+.SS Lab / audit (authorized targets)
+.TP
+.B \-\-lab\-slow\-tcp\-send
+With
+.B \-\-proto tcp ,
+send each mutated payload in small chunks with delays between chunks (defaults:
+8 bytes, 150 ms). Prints a
+.B LAB WARNING
+to standard error. Intended only for load/stress testing of systems you own or are permitted to exercise.
+.TP
+.BI \-\-lab\-tcp\-chunk\-bytes " N"
+Override chunk size (1\(en8192) when using lab TCP pacing; must be used with
+.BR \-\-lab\-tcp\-chunk\-delay\-ms ,
+or use
+.B \-\-lab\-slow\-tcp\-send
+alone for defaults.
+.TP
+.BI \-\-lab\-tcp\-chunk\-delay\-ms " N"
+Milliseconds between partial sends (1\(en60000).
+.TP
+.BI \-\-lab\-audit\-tag " TAG"
+Print one line to standard error of the form
+.B NFUZZ_LAB_AUDIT_JSON:{...}
+with a JSON object including
+.IR tag ,
+stream mode flags, and pacing parameters, for correlation with SIEM pipelines.
+.I TAG
+must be 1\(en80 characters from [A\-Za\-z0\-9._\-].
 .SS Bluetooth L2CAP mode
 Available when
 .B nfuzz

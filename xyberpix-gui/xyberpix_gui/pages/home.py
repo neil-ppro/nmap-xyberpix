@@ -42,10 +42,18 @@ class HomePage(QWidget):
         grid = QGridLayout()
         grid.setSpacing(14)
         cards = [
-            ("Nmap", "Profiles, flags, live output — Zenmap-style without the 2005 chrome.", 1),
+            (
+                "Nmap",
+                "Profiles (incl. built-in checklists), SIEM fields, nfuzz handoff, ngit→SIEM line.",
+                1,
+            ),
             ("Nping", "Probe paths with ICMP/TCP/UDP; echo modes and timing in plain language.", 2),
             ("Ncat", "Listen or connect: pivots, TLS, and one-off netcat workflows.", 3),
-            ("nfuzz", "Template stacks, HTTP daemon, pcap replay — with safety reminders.", 4),
+            (
+                "nfuzz",
+                "Templates, HTTP daemon, PCAP, lab presets + audit JSON on stderr.",
+                4,
+            ),
             ("MCP server", "Copy Cursor config and env hints for nmap-mcp-server.", 5),
         ]
         for i, (name, blurb, idx) in enumerate(cards):

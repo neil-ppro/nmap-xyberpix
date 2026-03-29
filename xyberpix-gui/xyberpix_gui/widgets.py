@@ -53,6 +53,9 @@ class OutputPanel(QWidget):
     def append_line(self, line: str) -> None:
         self.append(line + "\n")
 
+    def plain_text(self) -> str:
+        return self._text.toPlainText()
+
 
 class ProcessRunner(QWidget):
     """Run a program with QProcess and stream to OutputPanel."""

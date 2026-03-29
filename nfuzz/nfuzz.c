@@ -921,6 +921,14 @@ static void usage(FILE *fp, const char *argv0)
 "  --proto-reconnect        TCP: new connection per iteration (default: one connection).\n"
 "  --proto-connect-timeout SEC  TCP connect wait (default 10, max 300).\n"
 "\n"
+"Lab / audit (authorized targets only; --proto tcp for slow-send options):\n"
+"  --lab-slow-tcp-send       Pace each TCP payload with 8-byte chunks and 150 ms gaps (approximates\n"
+"                            slow-client stress; prints a LAB WARNING to stderr).\n"
+"  --lab-tcp-chunk-bytes N   Override chunk size with --lab-tcp-chunk-delay-ms (1..8192).\n"
+"  --lab-tcp-chunk-delay-ms N  Milliseconds between chunks (1..60000).\n"
+"  --lab-audit-tag TAG       Emit one NFUZZ_LAB_AUDIT_JSON line on stderr for SIEM-style correlation\n"
+"                            (TAG: 1-80 chars [A-Za-z0-9._-]).\n"
+"\n"
 "Bluetooth L2CAP mode (macOS IOBluetooth or Linux BlueZ when built; exclusive with raw and --proto):\n"
 "  --bt-l2cap ADDR          Peer BD_ADDR (XX:XX:XX:XX:XX:XX).\n"
 "  --bt-psm N               L2CAP PSM in host byte order (default 4097).\n"
@@ -985,7 +993,7 @@ static void usage(FILE *fp, const char *argv0)
 
 static const char *version_string(void)
 {
-  return "nfuzz (nmap-xyberpix) 0.7.1";
+  return "nfuzz (nmap-xyberpix) 0.7.2";
 }
 
 static int xtoi(int c)
@@ -1782,10 +1790,52 @@ static int tcp_connect_with_timeout(struct in_addr *dst, uint16_t port, int time
   return fd;
 }
 
+static int nfuzz_lab_tag_valid(const char *t)
+{
+  size_t n;
+
+  if (!t)
+    return -1;
+  n = strlen(t);
+  if (n < 1 || n > 80)
+    return -1;
+  for (; *t; t++) {
+    unsigned char c = (unsigned char) *t;
+    if (!(isalnum(c) || c == '_' || c == '-' || c == '.'))
+      return -1;
+  }
+  return 0;
+}
+
+static void nfuzz_emit_lab_audit_json(const char *tag, int http_daemon, int proto_mode,
+    unsigned lab_chunk, unsigned lab_delay_ms, uint16_t dport)
+{
+  fprintf(stderr,
+      "NFUZZ_LAB_AUDIT_JSON:{\"schema_version\":1,\"event\":\"nfuzz_lab_start\","
+      "\"nfuzz_version\":\"0.7.2\",\"tag\":\"%s\",\"http_daemon\":%s,"
+      "\"stream_proto\":%d,\"slow_tcp_chunk\":%u,\"slow_tcp_delay_ms\":%u,"
+      "\"dport\":%u}\n",
+      tag,
+      http_daemon ? "true" : "false",
+      proto_mode, lab_chunk, lab_delay_ms, (unsigned) dport);
+}
+
+static void nfuzz_ms_sleep(unsigned ms)
+{
+  struct timespec sl;
+
+  if (ms == 0)
+    return;
+  sl.tv_sec = (time_t)(ms / 1000);
+  sl.tv_nsec = (long)(ms % 1000) * 1000000L;
+  nanosleep(&sl, NULL);
+}
+
 static int run_proto_stream_fuzz(struct in_addr *dst, uint16_t dport, int use_tcp,
     unsigned char *template, int tlen, unsigned long count, unsigned rate,
     const char *strategy, long mut_off, long mut_len, long seed_arg,
-    int proto_reconnect, int connect_to_sec)
+    int proto_reconnect, int connect_to_sec, unsigned lab_tcp_chunk,
+    unsigned lab_tcp_delay_ms)
 {
   uint32_t rng = (uint32_t)(seed_arg >= 0 ? seed_arg : (long)time(NULL) ^ (long)now_ns());
   if (rng == 0)
@@ -1831,13 +1881,19 @@ static int run_proto_stream_fuzz(struct in_addr *dst, uint16_t dport, int use_tc
     if (use_tcp) {
       size_t off = 0;
       while (off < (size_t)len) {
-        ssize_t sent = send(tfd, work + off, (size_t)len - off, MSG_NOSIGNAL);
+        size_t room = (size_t)len - off;
+        size_t want = room;
+        if (lab_tcp_chunk > 0 && lab_tcp_delay_ms > 0 && want > (size_t)lab_tcp_chunk)
+          want = (size_t)lab_tcp_chunk;
+        ssize_t sent = send(tfd, work + off, want, MSG_NOSIGNAL);
         if (sent <= 0) {
           fprintf(stderr, "nfuzz: send(tcp): %s\n",
               sent < 0 ? strerror(errno) : "closed");
           goto fail;
         }
         off += (size_t)sent;
+        if (lab_tcp_chunk > 0 && lab_tcp_delay_ms > 0 && off < (size_t)len)
+          nfuzz_ms_sleep(lab_tcp_delay_ms);
       }
     } else {
       ssize_t sent = sendto(tfd, work, (size_t)len, 0, (struct sockaddr *)&peer,
@@ -2026,6 +2082,10 @@ int main(int argc, char **argv)
   int proto_payload_explicit = 0;
   int proto_reconnect = 0;
   int proto_connect_to = 10;
+  int lab_slow_tcp = 0;
+  unsigned lab_tcp_chunk = 0;
+  unsigned lab_tcp_delay_ms = 0;
+  const char *lab_audit_tag = NULL;
   const char *bt_l2cap_str = NULL;
 #ifdef HAVE_BLUETOOTH_L2CAP
   unsigned bt_psm = 0;
@@ -2463,6 +2523,32 @@ int main(int argc, char **argv)
       mut_len = strtol(argv[i], NULL, 10);
     } else if (strncmp(a, "--mutable-len=", 14) == 0) {
       mut_len = strtol(a + 14, NULL, 10);
+    } else if (strcmp(a, "--lab-slow-tcp-send") == 0) {
+      lab_slow_tcp = 1;
+    } else if (strncmp(a, "--lab-tcp-chunk-bytes=", 22) == 0) {
+      lab_tcp_chunk = (unsigned) strtoul(a + 22, NULL, 10);
+    } else if (strcmp(a, "--lab-tcp-chunk-bytes") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "nfuzz: missing value after %s\n", a);
+        return 2;
+      }
+      lab_tcp_chunk = (unsigned) strtoul(argv[i], NULL, 10);
+    } else if (strncmp(a, "--lab-tcp-chunk-delay-ms=", 24) == 0) {
+      lab_tcp_delay_ms = (unsigned) strtoul(a + 24, NULL, 10);
+    } else if (strcmp(a, "--lab-tcp-chunk-delay-ms") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "nfuzz: missing value after %s\n", a);
+        return 2;
+      }
+      lab_tcp_delay_ms = (unsigned) strtoul(argv[i], NULL, 10);
+    } else if (strncmp(a, "--lab-audit-tag=", 16) == 0) {
+      lab_audit_tag = a + 16;
+    } else if (strcmp(a, "--lab-audit-tag") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "nfuzz: missing value after %s\n", a);
+        return 2;
+      }
+      lab_audit_tag = argv[i];
     } else if (a[0] == '-') {
       fprintf(stderr, "nfuzz: unknown option: %s\n", a);
       return 2;
@@ -2475,6 +2561,37 @@ int main(int argc, char **argv)
   if (!authorized) {
     fprintf(stderr,
         "nfuzz: refusing to run without --authorized or NFUZZ_AUTHORIZED=1\n");
+    return 2;
+  }
+
+  if (lab_slow_tcp) {
+    if (lab_tcp_chunk == 0)
+      lab_tcp_chunk = 8;
+    if (lab_tcp_delay_ms == 0)
+      lab_tcp_delay_ms = 150;
+  }
+  if (lab_tcp_chunk > 8192u) {
+    fprintf(stderr, "nfuzz: --lab-tcp-chunk-bytes too large (max 8192)\n");
+    return 2;
+  }
+  if (lab_tcp_delay_ms > 60000u) {
+    fprintf(stderr, "nfuzz: --lab-tcp-chunk-delay-ms too large (max 60000)\n");
+    return 2;
+  }
+  if ((lab_tcp_chunk > 0) ^ (lab_tcp_delay_ms > 0)) {
+    fprintf(stderr,
+        "nfuzz: lab TCP pacing requires both --lab-tcp-chunk-bytes and "
+        "--lab-tcp-chunk-delay-ms (or use --lab-slow-tcp-send alone)\n");
+    return 2;
+  }
+  if (lab_tcp_chunk > 0 && lab_tcp_delay_ms > 0 && proto_mode != 1) {
+    fprintf(stderr,
+        "nfuzz: lab slow TCP options apply only with --proto tcp\n");
+    return 2;
+  }
+  if (lab_audit_tag && nfuzz_lab_tag_valid(lab_audit_tag) != 0) {
+    fprintf(stderr,
+        "nfuzz: --lab-audit-tag must be 1-80 characters from [A-Za-z0-9._-]\n");
     return 2;
   }
 
@@ -2497,6 +2614,11 @@ int main(int argc, char **argv)
   if (brw.browser_restart_sec > 86400u) {
     fprintf(stderr, "nfuzz: --browser-restart-sec too large (max 86400)\n");
     return 2;
+  }
+
+  if (lab_audit_tag) {
+    nfuzz_emit_lab_audit_json(lab_audit_tag, http_daemon, proto_mode,
+        lab_tcp_chunk, lab_tcp_delay_ms, tpl_dport);
   }
 
   if (http_daemon) {
@@ -2563,9 +2685,14 @@ int main(int argc, char **argv)
       stream_tpl[0] = 0;
       stlen = 1;
     }
+    if (lab_tcp_chunk > 0 && lab_tcp_delay_ms > 0) {
+      fprintf(stderr,
+          "nfuzz: LAB WARNING: chunked slow TCP sends can hold server threads open; "
+          "use only on hosts you own or are explicitly authorized to load-test.\n");
+    }
     return run_proto_stream_fuzz(&dst_addr, tpl_dport, proto_mode == 1, stream_tpl,
         stlen, count, rate, strategy, mut_off, mut_len, seed_arg, proto_reconnect,
-        proto_connect_to);
+        proto_connect_to, lab_tcp_chunk, lab_tcp_delay_ms);
   }
 
 #ifdef HAVE_BLUETOOTH_L2CAP

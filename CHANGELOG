@@ -1,5 +1,11 @@
 #Nmap Changelog ($Id$); -*-text-*-
 
+o [nmap-xyberpix] **xyberpix-gui**: Nmap page **nfuzz handoff** from **grepable/XML** files or **last run output** (suggested argv only; user applies or copies). **Built-in checklist profiles** (polite+SIEM, discovery-only, decoy stagger lab, IPv6 robust) with preflight text. **ngit → SIEM** form runs **`ngit --siem-log`** to append **`ngit_scan_summary`** NDJSON (counts only). **nfuzz** tab: **lab presets** (polite stream, slow TCP chunks, PCAP polite) and optional **`--lab-audit-tag`**. **`scripts/nmap-nfuzz-suggest.py`** for scripted suggestions. **`tests_fork`** covers handoff parsing.
+
+o [nmap-xyberpix] **`ngit`** (0.4.3): **`--siem-log PATH`** appends one **`ngit_scan_summary`** NDJSON line per run (with optional **`--siem-tag`**); no secret values in that line. **`ngit(1)`** updated.
+
+o [nmap-xyberpix] **nfuzz** 0.7.2: **`--lab-slow-tcp-send`** and **`--lab-tcp-chunk-bytes` / `--lab-tcp-chunk-delay-ms`** for chunked TCP stream pacing (lab warning on stderr); **`--lab-audit-tag`** emits **`NFUZZ_LAB_AUDIT_JSON:`** on stderr for log correlation. **`nfuzz(1)`** updated.
+
 o [nmap-xyberpix] **[SIEM]** `scan_start` NDJSON (and syslog payload) adds **`scanner_policy`** (`safe_profile`, `adaptive_rate`, `ipv6_robust`, `auto_hostgroup`), **`timing_template`** (0–5 or null), **`preflight_risk`** (`low` / `medium` / `high`), and **`preflight_notes`** (stable tags for NSE, OS/version detection, `-Pn`+ports, timing tier, policy flags). Documented in **docs/SIEM-NDJSON-SCHEMA.md**.
 
 o [nmap-xyberpix] **`ngit`** (0.4.2): Cap **regex matches per line** and **PEM blocks per file** to limit pathological scan cost (with existing pattern-size limits). Fix **`--extra-regex`** error message when the label is invalid (**`str.format`** treated **`{0,62}`** as a format field).
