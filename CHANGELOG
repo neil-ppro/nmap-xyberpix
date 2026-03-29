@@ -1,5 +1,18 @@
 #Nmap Changelog ($Id$); -*-text-*-
 
+o [nmap-xyberpix] **xyberpix-gui**: Nmap page exposes a broad set of **nmap --help**
+  options as **dropdown menus** (host discovery, scan techniques, ports, NSE, OS,
+  timing, evasion, output, SIEM, fork flags, etc.) plus companion text fields for
+  value-taking flags; **named scan profiles** save and reload the full form via
+  QSettings (`nmap/profiles_v2`).
+
+o [nmap-xyberpix] **xyberpix-gui**: New PySide6 desktop app (install with
+  `pip install -e ./xyberpix-gui`) providing a dark-themed control room for Nmap,
+  Nping, Ncat, and nfuzz (guided forms, copy-command, live output) plus an MCP
+  tab that copies Cursor-style JSON and documents **mcp-nmap-server** setup.
+  Binary discovery honors `PATH`, optional per-tool overrides, `NMAP_XYBERPIX_ROOT`
+  / Settings “repo root”, and built binaries at the tree root (e.g. `./nmap`).
+
 o [nmap-xyberpix] nfuzz 0.6: **--pcap** / **--pcap-index** load a base IPv4
   datagram from a capture file (libpcap; Ethernet w/ optional 802.1Q, DLT_RAW,
   DLT_NULL/DLT_LOOP, Linux SLL). **--template** supports **--ip-options-hex**,

@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xyberpix-gui"
+version = "0.1.0"
+description = "Modern desktop launcher for Nmap, Nping, Ncat, Nfuzz, and MCP server setup (nmap-xyberpix)."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "PySide6>=6.5.0",
+]
+
+[project.scripts]
+xyberpix-gui = "xyberpix_gui.app:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["xyberpix_gui*"]
