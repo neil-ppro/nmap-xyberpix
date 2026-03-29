@@ -1,0 +1,224 @@
+.TH NGIT 1 "March 2026" "nmap-xyberpix" "User Commands"
+.SH NAME
+ngit \- scan GitHub repositories for common secret and password patterns
+.SH SYNOPSIS
+.B ngit
+.B \-\-authorized
+.BI \-\-repo " OWNER/NAME"
+.RI [ options ]
+.br
+.B ngit
+.B \-\-authorized
+.BI \-\-scan\-count " N"
+.RB [ \-\-random ]
+.RI [ options ]
+.SH DESCRIPTION
+.B ngit
+clones each target repository with
+.BR git (1)
+.RB ( \-\-depth " 1)
+and scans text files under the working tree with regular\-expression rules
+(AWS\-style keys, GitHub tokens, private key blocks, common
+.BR password = / api_key
+assignments, Stripe keys, etc.). PEM
+.B private
+keys are always detected; PEM
+.B public X.509 certificates
+are optional (\fB\-\-include\-certificates\fR).
+.PP
+.B Important:
+Use only on repositories you
+.B own
+or are
+.B explicitly authorized
+to assess. Indiscriminate scanning of third\-party repositories may violate law,
+contract, and GitHub\(cqs terms of use.
+.B ngit
+refuses to run unless you pass
+.B \-\-authorized
+or set
+.BR NGIT_AUTHORIZED=1 .
+.PP
+.B \-\-repo
+scans one public repository.
+.B \-\-scan\-count
+uses the GitHub REST
+.B search/repositories
+API to discover repositories matching
+.B \-\-search\-query
+then scans up to
+.I N
+of them in repository order unless
+.B \-\-random
+is set, in which case repositories are drawn from random result pages (still
+capped by GitHub\(cqs search limits).
+.PP
+Unauthenticated search is heavily rate\-limited; set
+.B GITHUB_TOKEN
+or
+.B \-\-token
+for a personal access token (or fine\-grained token with appropriate read scope).
+.B git
+must be installed for cloning.
+.PP
+Findings are written to standard output
+.B immediately
+as they are discovered (each block is flushed). Each match includes the GitHub
+.I owner/repo
+name, file path and line number, a rule
+.BR type ,
+and the matched
+.B value
+(redacted by default; use
+.B \-\-show\-secrets
+for full text; long values may be truncated). Multi\-line PEM blocks are one
+finding each. Add
+.B \-\-extra\-regex " LABEL=PATTERN"
+for org\-specific rules (repeatable).
+.B \-\-type
+and
+.B \-\-exclude\-type
+filter by finding
+.B type
+(rule name or
+.BR pem_ * label;
+shell\-style globs via
+.BR fnmatch (3)).
+.B \-\-keyword
+narrows secret/regex hits to lines containing a substring;
+.B \-\-keyword\-scan
+searches only for keywords (type
+.BR keyword_hit ).
+Heuristic rules produce false positives.
+.SH OPTIONS
+.TP
+.B \-\-authorized
+Required acknowledgement (or
+.BR NGIT_AUTHORIZED=1 ).
+.TP
+.BI \-\-repo " OWNER/NAME"
+Single repository to scan.
+.TP
+.BI \-\-scan\-count " N"
+Scan
+.I N
+repositories from search (mutually exclusive with
+.BR \-\-repo
+as the primary mode; if both are given,
+.B \-\-repo
+wins and count is ignored).
+.TP
+.B \-\-random
+Randomize which search result pages are used (with
+.BR \-\-scan\-count ).
+.TP
+.BI \-\-search\-query " QUERY"
+Query string for
+.BR /search/repositories
+(default:
+.IR stars:>5 " pushed:>2024-01-01 ).
+.TP
+.BI \-\-token " TOKEN"
+GitHub token (overrides
+.B GITHUB_TOKEN
+/ GH_TOKEN).
+.TP
+.BI \-\-seed " N"
+Seed for random page selection.
+.TP
+.B \-\-insecure
+Disable TLS certificate verification for GitHub HTTPS (API and
+.BR git " clone).
+For debugging only; prefer fixing the trust store (e.g.\&
+.BI SSL_CERT_FILE
+to a CA bundle such as Homebrew\(cqs
+.I /opt/homebrew/etc/ca-certificates/cert.pem ,
+or
+.B pip " install certifi ).
+.TP
+.B \-\-show\-secrets
+Print full matched values (default: redact/mask; unsafe for logs or shared
+terminals).
+.TP
+.B \-\-include\-certificates
+Also flag PEM
+.B CERTIFICATE
+blocks (public X.509), not only private keys and not CSR
+.RB ( CERTIFICATE " REQUEST).
+.TP
+.BI \-\-extra\-regex " LABEL=PATTERN"
+Extra line\-based rule; first
+.B =
+separates label (letters, digits, underscore; max 63 chars after first) from
+the Python regex. Prefer one capturing group for the secret; otherwise the
+whole match is shown (subject to
+.BR \-\-show\-secrets ).
+Repeat for multiple rules.
+.TP
+.BI \-\-type " GLOB"
+Only emit findings whose
+.B type
+matches a
+.BR fnmatch (3)
+glob (e.g.\&
+.IR aws* ", " pem_* ).
+Repeat or use comma\-separated globs in one argument.
+.TP
+.BI \-\-exclude\-type " GLOB"
+Skip types matching this glob (repeatable or comma\-separated). Applied after
+.BR \-\-type .
+.TP
+.BI \-\-keyword " TEXT"
+Normal scan: require this substring (case\-insensitive) on the line for regex
+secret hits. Keyword scan: search for this text (repeatable).
+.TP
+.BI \-\-keyword\-file " PATH"
+Extra keywords, one per line (
+.B #
+starts a comment). Merged with
+.BR \-\-keyword .
+Repeatable.
+.TP
+.B \-\-keyword\-scan
+Clone and report lines matching any keyword only (finding type
+.BR keyword_hit );
+does not run built\-in secret regexes or PEM detection. Requires
+.B \-\-keyword
+and/or
+.BR \-\-keyword\-file .
+.TP
+.B \-v ", " \-\-verbose
+Progress and rate\-limit hints on standard error.
+.TP
+.B \-\-version
+Print version and exit.
+.SH EXAMPLES
+.PP
+.B ngit \-\-authorized \-\-repo OWNER/NAME \-\-type \(aqaws*\(aq
+limits output to AWS\-related finding types;
+.B ngit \-\-authorized \-\-repo OWNER/NAME \-\-keyword\-scan \-\-keyword password
+reports lines containing that substring as
+.BR keyword_hit " findings.
+.SH ENVIRONMENT
+.TP
+.B NGIT_AUTHORIZED
+If set to
+.BR 1 ,
+equivalent to
+.BR \-\-authorized .
+.TP
+.B GITHUB_TOKEN ", " GH_TOKEN
+Default API and clone authentication for private repos the token can read.
+.TP
+.B SSL_CERT_FILE
+If set to a PEM CA bundle path,
+.B ngit
+uses it for GitHub API TLS verification (helps Homebrew Python builds without a default bundle).
+.SH EXIT STATUS
+0 on success, 2 on usage or refusal to run, 1 if an unhandled error occurs.
+.SH SEE ALSO
+.BR git (1),
+.BR nmap (1)
+.SH AUTHORS
+.B ngit
+was added in the nmap\-xyberpix tree alongside Nmap.

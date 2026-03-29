@@ -393,6 +393,36 @@ AC_SUBST(NFUZZ_CLEAN)
 AC_SUBST(NFUZZ_BT_LIBS)
 AC_SUBST(NFUZZ_BT_OBJ)
 
+# nmap-xyberpix: ngit — GitHub repo secret scanner (Python 3 + git)
+AC_ARG_WITH(ngit, AC_HELP_STRING([--without-ngit], [Do not install the ngit GitHub secret scanner]), [], [with_ngit=yes])
+case "$host" in
+  *-*-mingw32*|*-*-cygwin*)
+    with_ngit="no"
+    ;;
+esac
+if $HAVE_PYTHON ; then : ;
+else
+  if test "$with_ngit" != "no"; then
+    AC_MSG_WARN([Not installing ngit because Python 3 was not found])
+  fi
+  with_ngit=no
+fi
+if test "$with_ngit" = "no"; then
+  BUILDNGIT=""
+  INSTALLNGIT=""
+  UNINSTALLNGIT=""
+  NGIT_CLEAN=""
+else
+  BUILDNGIT=build-ngit
+  INSTALLNGIT=install-ngit
+  UNINSTALLNGIT=uninstall-ngit
+  NGIT_CLEAN=clean-ngit
+fi
+AC_SUBST(BUILDNGIT)
+AC_SUBST(INSTALLNGIT)
+AC_SUBST(UNINSTALLNGIT)
+AC_SUBST(NGIT_CLEAN)
+
 # OpenSSL and NSE C modules can require dlopen
 AC_SEARCH_LIBS(dlopen, dl)
 

@@ -676,6 +676,10 @@ PCAP_DIST_CLEAN
 PCAP_CLEAN
 PCAP_BUILD
 OPENSSL_LIBS
+NGIT_CLEAN
+UNINSTALLNGIT
+INSTALLNGIT
+BUILDNGIT
 NFUZZ_BT_OBJ
 NFUZZ_BT_LIBS
 NFUZZ_CLEAN
@@ -793,6 +797,7 @@ with_ndiff
 with_zenmap
 with_nping
 with_nfuzz
+with_ngit
 with_openssl
 with_libpcap
 with_libpcre
@@ -1468,6 +1473,7 @@ Optional Packages:
   --without-zenmap        Skip installation of the Zenmap graphical frontend
   --without-nping         Skip installation of the Nping utility
   --without-nfuzz         Do not build the nfuzz raw IPv4 fuzzer
+  --without-ngit          Do not install the ngit GitHub secret scanner
   --with-openssl=DIR      Use optional openssl libs and includes from
                           [DIR]/lib/ and [DIR]/include/openssl/)
   --with-libpcap=DIR      Look for pcap in DIR/include and DIR/libs.
@@ -7031,6 +7037,46 @@ fi
 fi
 
 
+
+
+
+
+
+# nmap-xyberpix: ngit — GitHub repo secret scanner (Python 3 + git)
+
+# Check whether --with-ngit was given.
+if test ${with_ngit+y}
+then :
+  withval=$with_ngit;
+else case e in #(
+  e) with_ngit=yes ;;
+esac
+fi
+
+case "$host" in
+  *-*-mingw32*|*-*-cygwin*)
+    with_ngit="no"
+    ;;
+esac
+if $HAVE_PYTHON ; then : ;
+else
+  if test "$with_ngit" != "no"; then
+    { printf '%s\n' "$as_me:${as_lineno-$LINENO}: WARNING: Not installing ngit because Python 3 was not found" >&5
+printf '%s\n' "$as_me: WARNING: Not installing ngit because Python 3 was not found" >&2;}
+  fi
+  with_ngit=no
+fi
+if test "$with_ngit" = "no"; then
+  BUILDNGIT=""
+  INSTALLNGIT=""
+  UNINSTALLNGIT=""
+  NGIT_CLEAN=""
+else
+  BUILDNGIT=build-ngit
+  INSTALLNGIT=install-ngit
+  UNINSTALLNGIT=uninstall-ngit
+  NGIT_CLEAN=clean-ngit
+fi
 
 
 

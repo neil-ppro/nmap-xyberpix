@@ -1,0 +1,935 @@
+#!/usr/bin/env python3
+# ngit — GitHub repository secret/password pattern scanner (nmap-xyberpix)
+#
+# Use only on repositories you own or are explicitly authorized to assess.
+# Nmap and ngit are (C) Nmap Software LLC — see LICENSE in the distribution.
+
+from __future__ import annotations
+
+import argparse
+import fnmatch
+import json
+import os
+import random
+import re
+import shutil
+import ssl
+import subprocess
+import sys
+import tempfile
+import urllib.error
+import urllib.parse
+import urllib.request
+from typing import Iterator
+
+if sys.version_info < (3, 9):
+    print("ngit: Python 3.9 or newer is required", file=sys.stderr)
+    sys.exit(2)
+
+__version__ = "0.4"
+
+USER_AGENT = "ngit/{} (nmap-xyberpix; security research)".format(__version__)
+GITHUB_API = "https://api.github.com"
+MAX_FILE_BYTES = 512 * 1024
+SKIP_DIR_NAMES = frozenset(
+    {".git", "node_modules", "vendor", ".venv", "venv", "__pycache__", "dist", "build"}
+)
+SKIP_EXT = frozenset(
+    {
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".webp",
+        ".ico",
+        ".pdf",
+        ".zip",
+        ".tar",
+        ".gz",
+        ".bz2",
+        ".xz",
+        ".7z",
+        ".exe",
+        ".dll",
+        ".so",
+        ".dylib",
+        ".bin",
+        ".mp3",
+        ".mp4",
+        ".woff",
+        ".woff2",
+        ".ttf",
+        ".eot",
+        ".class",
+        ".pyc",
+        ".o",
+        ".a",
+    }
+)
+
+
+def compile_rules() -> list[tuple[str, re.Pattern[str]]]:
+    """(label, regex) — line-based; group 1 = secret when possible."""
+    patterns: list[tuple[str, str]] = [
+        # AWS
+        ("aws_access_key_id", r"\b((?:AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16})\b"),
+        (
+            "aws_secret_access_key",
+            r"(?i)\b(?:aws[_-]?secret[_-]?access[_-]?key|AWS_SECRET_ACCESS_KEY)\s*[=:]\s*['\"]?([A-Za-z0-9/+=]{40})['\"]?\b",
+        ),
+        (
+            "aws_session_token",
+            r"(?i)\b(?:aws[_-]?session[_-]?token)\s*[=:]\s*['\"]([A-Za-z0-9+/=]{100,})['\"]",
+        ),
+        # GitHub
+        ("github_classic_pat", r"\b(ghp_[A-Za-z0-9]{36,255})\b"),
+        ("github_fine_grained_pat", r"\b(github_pat_[A-Za-z0-9_]{20,255})\b"),
+        ("github_oauth", r"\b(gho_[A-Za-z0-9]{36,255})\b"),
+        ("github_app_refresh", r"\b(ghr_[A-Za-z0-9]{36,255})\b"),
+        ("github_app_user", r"\b(ghu_[A-Za-z0-9]{36,255})\b"),
+        # Slack
+        ("slack_bot_token", r"\b(xoxb-[0-9]{10,13}-[0-9]{10,13}-[A-Za-z0-9]{24,48})\b"),
+        ("slack_user_token", r"\b(xoxp-[0-9]{10,13}-[0-9]{10,13}-[0-9]{10,13}-[a-fA-F0-9]{64,})\b"),
+        ("slack_config_token", r"\b(xoxe-[0-9]-[A-Za-z0-9-]{10,200})\b"),
+        # Google / GCP
+        ("google_api_key", r"\b(AIza[0-9A-Za-z\-_]{35})\b"),
+        (
+            "gcp_service_account_json_hint",
+            r"(?i)\"private_key\"\s*:\s*\"(-----BEGIN [A-Z ]*PRIVATE KEY-----[^\"]{20,})\"",
+        ),
+        ("google_oauth_client_secret", r"(?i)client_secret['\"]?\s*[=:]\s*['\"]([a-zA-Z0-9_-]{24,48})['\"]"),
+        # Stripe / payments
+        ("stripe_secret", r"\b((?:sk|pk)_(?:live|test)_[0-9a-zA-Z]{24,})\b"),
+        ("square_access_token", r"\b(sq0atp-[0-9A-Za-z\-_]{22,})\b"),
+        ("square_app_secret", r"\b(sq0csp-[0-9A-Za-z\-_]{22,})\b"),
+        ("paypal_client_secret", r"(?i)paypal[_-]?(?:client[_-]?)?secret\s*[=:]\s*['\"]([A-Za-z0-9+/=]{16,})['\"]"),
+        # Generic assignments & env
+        (
+            "password_assignment",
+            r"(?i)(?:password|passwd|pwd)\s*[=:]\s*['\"]([^'\"\\\n]{6,200})['\"]",
+        ),
+        (
+            "secret_assignment",
+            r"(?i)(?:secret|client_secret|app_secret)\s*[=:]\s*['\"]([^'\"\\\n]{8,200})['\"]",
+        ),
+        (
+            "api_key_assignment",
+            r"(?i)(?:api[_-]?key|apikey|api_secret)\s*[=:]\s*['\"]([^'\"\\\n]{10,200})['\"]",
+        ),
+        (
+            "token_assignment",
+            r"(?i)(?:access[_-]?token|auth[_-]?token|bearer)\s*[=:]\s*['\"]([^'\"\\\n]{12,200})['\"]",
+        ),
+        (
+            "credential_assignment",
+            r"(?i)(?:credential|credentials)\s*[=:]\s*['\"]([^'\"\\\n]{10,200})['\"]",
+        ),
+        # Package / registry tokens
+        ("npm_token", r"\b(npm_[A-Za-z0-9]{36,})\b"),
+        ("pypi_token", r"\b(pypi-[A-Za-z0-9_\-]{80,})\b"),
+        ("rubygems_api_key", r"\b(rubygems_[a-f0-9]{48})\b"),
+        # Heroku / PaaS
+        (
+            "heroku_api_key",
+            r"(?i)\bheroku[_-]?api[_-]?key\s*[=:]\s*['\"]?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})['\"]?\b",
+        ),
+        ("digitalocean_token", r"\b(dop_v1_[a-f0-9]{64})\b"),
+        ("cloudflare_api_key", r"(?i)(?:CF_API_KEY|CLOUDFLARE_API_KEY)\s*[=:]\s*['\"]([a-f0-9]{37})['\"]"),
+        # Messaging / bots
+        ("discord_bot_token", r"\b([MN][A-Za-z\d]{23,}\.[\w-]{6}\.[\w-]{27,})\b"),
+        ("telegram_bot_token", r"\b([0-9]{8,10}:[A-Za-z0-9_-]{35})\b"),
+        ("slack_webhook_url", r"(https://hooks\.slack\.com/services/[A-Za-z0-9/]+)"),
+        # LLM / AI APIs
+        ("openai_api_key", r"\b(sk-proj-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{48,})\b"),
+        ("anthropic_api_key", r"\b(sk-ant-api(?:03|-)[A-Za-z0-9\-_]{20,})\b"),
+        ("huggingface_token", r"\b(hf_[A-Za-z0-9]{30,})\b"),
+        # Email / comms
+        ("mailgun_key", r"\b(key-[0-9a-f]{32})\b"),
+        ("sendgrid_api_key", r"\b(SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43,})\b"),
+        ("twilio_auth_token", r"(?i)twilio[_-]?auth[_-]?token\s*[=:]\s*['\"]?([0-9a-f]{32})['\"]?\b"),
+        # Observability
+        ("datadog_api_key", r"(?i)datadog[_-]?api[_-]?key\s*[=:]\s*['\"]([a-f0-9]{32})['\"]"),
+        ("newrelic_license_key", r"(?i)newrelic[_-]?(?:license|api)[_-]?key\s*[=:]\s*['\"]([A-Za-z0-9_]{32,48})['\"]"),
+        # Azure (common formats)
+        (
+            "azure_storage_key",
+            r"(?i)(?:storage[_-]?key|accountkey)\s*[=:]\s*['\"]([A-Za-z0-9+/]{86}==)['\"]",
+        ),
+        (
+            "azure_client_secret",
+            r"(?i)(?:client_secret|AZURE_CLIENT_SECRET)\s*[=:]\s*['\"]([0-9A-Za-z~._-]{20,50})['\"]",
+        ),
+        # Alibaba / others
+        ("alibaba_access_key", r"\b(LTAI[A-Za-z0-9]{16,20})\b"),
+        # JWT (likely credential)
+        ("jwt_compact", r"\b(eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})\b"),
+        # Database / broker URLs with password
+        (
+            "database_url_with_password",
+            r"\b((?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis|amqp|amqps)://[^\s/]+:[^@\s]+@[^\s]+)\b",
+        ),
+        # Kubernetes service account token (long JWT-like in file)
+        ("kube_sa_token_line", r"(?i)token:\s*([A-Za-z0-9._-]{200,})"),
+        # .npmrc _auth
+        ("npmrc_auth", r"(?im)(?:^|\r?\n)_auth(?:Token)?=([A-Za-z0-9+/=]{20,})\s*(?:\r?\n|$)"),
+        # Docker config auth
+        ("docker_auth_b64", r"\"auth\"\s*:\s*\"([A-Za-z0-9+/]{20,}={0,2})\"\s*"),
+    ]
+    out: list[tuple[str, re.Pattern[str]]] = []
+    for label, pat in patterns:
+        try:
+            out.append((label, re.compile(pat)))
+        except re.error:
+            continue
+    return out
+
+
+RULES = compile_rules()
+
+# Full PEM blocks (private keys, some certs) — scanned per file, not per line.
+PEM_BLOCK_PATTERN = re.compile(
+    r"-----BEGIN ([A-Z0-9 -]+)-----[\s\S]*?-----END \1-----",
+    re.MULTILINE,
+)
+
+MAX_SECRET_PRINT = 4096
+
+# HTTPS to GitHub API; set by init_ssl() before any network use.
+_ssl_ctx: ssl.SSLContext | None = None
+_insecure_ssl: bool = False
+
+
+def _candidate_ca_files() -> list[str]:
+    """PEM bundles often missing from embedded OpenSSL on Homebrew Python."""
+    paths: list[str] = []
+    env = os.environ.get("SSL_CERT_FILE")
+    if env:
+        paths.append(env)
+    paths.extend(
+        [
+            "/opt/homebrew/etc/ca-certificates/cert.pem",
+            "/opt/homebrew/etc/openssl@3/cert.pem",
+            "/opt/homebrew/etc/ssl/cert.pem",
+            "/usr/local/etc/ca-certificates/cert.pem",
+            "/usr/local/etc/openssl@3/cert.pem",
+            "/etc/ssl/cert.pem",
+            "/etc/ssl/certs/ca-certificates.crt",
+            "/etc/pki/tls/certs/ca-bundle.crt",
+        ]
+    )
+    return paths
+
+
+def build_trusted_ssl_context() -> ssl.SSLContext:
+    """Prefer explicit CA bundles so Homebrew / macOS Python can verify api.github.com."""
+    env_file = os.environ.get("SSL_CERT_FILE")
+    if env_file and os.path.isfile(env_file):
+        return ssl.create_default_context(cafile=env_file)
+
+    try:
+        import certifi
+
+        ca = certifi.where()
+        if ca and os.path.isfile(ca):
+            return ssl.create_default_context(cafile=ca)
+    except ImportError:
+        pass
+
+    for path in _candidate_ca_files():
+        if path and os.path.isfile(path):
+            try:
+                return ssl.create_default_context(cafile=path)
+            except ssl.SSLError:
+                continue
+
+    return ssl.create_default_context()
+
+
+def init_ssl(insecure: bool) -> None:
+    global _ssl_ctx, _insecure_ssl
+    _insecure_ssl = insecure
+    if insecure:
+        _ssl_ctx = ssl._create_unverified_context()
+    else:
+        _ssl_ctx = build_trusted_ssl_context()
+
+
+def get_ssl_context() -> ssl.SSLContext:
+    if _ssl_ctx is None:
+        init_ssl(False)
+    assert _ssl_ctx is not None
+    return _ssl_ctx
+
+
+def mask_token(s: str, keep: int = 4) -> str:
+    s = s.strip()
+    if len(s) <= 2 * keep:
+        return "*" * min(len(s), 12)
+    return "{}...{}".format(s[:keep], s[-keep:])
+
+
+def format_secret_value(raw: str, redact: bool) -> str:
+    s = raw.strip()
+    if redact:
+        return mask_token(s)
+    if len(s) > MAX_SECRET_PRINT:
+        return (
+            s[: MAX_SECRET_PRINT]
+            + "\n... [{} bytes omitted]".format(len(s) - MAX_SECRET_PRINT)
+        )
+    return s
+
+
+def rule_type_allowed(
+    label: str,
+    include_globs: list[str],
+    exclude_globs: list[str],
+) -> bool:
+    """If include_globs non-empty, label must match one. Excludes always win."""
+    for x in exclude_globs:
+        if fnmatch.fnmatch(label, x):
+            return False
+    if not include_globs:
+        return True
+    return any(fnmatch.fnmatch(label, g) for g in include_globs)
+
+
+def line_matches_keywords(line: str, keywords_lower: list[str]) -> bool:
+    if not keywords_lower:
+        return True
+    low = line.lower()
+    return any(k in low for k in keywords_lower)
+
+
+def load_keyword_file_paths(paths: list[str]) -> list[str]:
+    out: list[str] = []
+    for path in paths:
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    s = line.strip()
+                    if s and not s.startswith("#"):
+                        out.append(s.lower())
+        except OSError as e:
+            print("ngit: cannot read --keyword-file {}: {}".format(path, e), file=sys.stderr)
+            sys.exit(2)
+    return out
+
+
+def emit_finding(
+    repo: str,
+    rel_path: str,
+    lineno: int,
+    finding_type: str,
+    raw_value: str,
+    redact: bool,
+) -> None:
+    """Print one finding immediately (flushed) for live monitoring."""
+    val = format_secret_value(raw_value, redact)
+    print("repository: {}".format(repo), flush=True)
+    print("location: {}:{}".format(rel_path, lineno), flush=True)
+    print("type: {}".format(finding_type), flush=True)
+    print("value:", flush=True)
+    print(val, flush=True)
+    print("---", flush=True)
+
+
+def scan_line_findings(
+    lines: list[str],
+    rules: list[tuple[str, re.Pattern[str]]],
+    keywords_lower: list[str],
+) -> list[tuple[int, str, str]]:
+    out: list[tuple[int, str, str]] = []
+    for lineno, line in enumerate(lines, start=1):
+        if not line_matches_keywords(line, keywords_lower):
+            continue
+        for name, rx in rules:
+            for m in rx.finditer(line):
+                g = m.group(1) if m.lastindex else m.group(0)
+                g = g.strip()
+                if g:
+                    out.append((lineno, name, g))
+    return out
+
+
+def scan_keyword_hits_only(
+    lines: list[str],
+    keywords_lower: list[str],
+) -> list[tuple[int, str, str]]:
+    """Lines containing any keyword (for --keyword-scan)."""
+    out: list[tuple[int, str, str]] = []
+    for lineno, line in enumerate(lines, start=1):
+        if line_matches_keywords(line, keywords_lower):
+            out.append((lineno, "keyword_hit", line))
+    return out
+
+
+def scan_pem_findings(text: str, include_certificates: bool) -> list[tuple[int, str, str]]:
+    """PEM blocks: private keys always; optional public X.509 via include_certificates."""
+    out: list[tuple[int, str, str]] = []
+    for m in PEM_BLOCK_PATTERN.finditer(text):
+        kind = m.group(1).strip()
+        ku = kind.upper()
+        if "PRIVATE" in ku:
+            take = True
+        elif include_certificates and "CERTIFICATE" in ku and "REQUEST" not in ku:
+            take = True
+        else:
+            continue
+        block = m.group(0).strip()
+        if len(block) < 80:
+            continue
+        lineno = text.count("\n", 0, m.start()) + 1
+        label = "pem_" + kind.lower().replace(" ", "_").replace("-", "_")
+        out.append((lineno, label, block))
+    return out
+
+
+def scan_single_file(
+    full_path: str,
+    rel_path: str,
+    repo: str,
+    rules: list[tuple[str, re.Pattern[str]]],
+    redact: bool,
+    include_certificates: bool,
+    include_types: list[str],
+    exclude_types: list[str],
+    keywords_lower: list[str],
+    keyword_scan_only: bool,
+) -> int:
+    try:
+        st = os.stat(full_path)
+        if st.st_size > MAX_FILE_BYTES:
+            return 0
+        raw = open(full_path, "rb").read()
+    except OSError:
+        return 0
+    if is_probably_binary(raw[:8192]):
+        return 0
+    try:
+        text = raw.decode("utf-8", errors="replace")
+    except Exception:
+        return 0
+    lines = text.splitlines()
+    hits = 0
+
+    if keyword_scan_only:
+        for lineno, name, val in scan_keyword_hits_only(lines, keywords_lower):
+            emit_finding(repo, rel_path, lineno, name, val, redact)
+            hits += 1
+        return hits
+
+    for lineno, name, val in scan_line_findings(lines, rules, keywords_lower):
+        if not rule_type_allowed(name, include_types, exclude_types):
+            continue
+        emit_finding(repo, rel_path, lineno, name, val, redact)
+        hits += 1
+    for lineno, name, val in scan_pem_findings(text, include_certificates):
+        if not rule_type_allowed(name, include_types, exclude_types):
+            continue
+        emit_finding(repo, rel_path, lineno, name, val, redact)
+        hits += 1
+    return hits
+
+
+def scan_tree_stream(
+    root: str,
+    repo: str,
+    rules: list[tuple[str, re.Pattern[str]]],
+    redact: bool,
+    include_certificates: bool,
+    include_types: list[str],
+    exclude_types: list[str],
+    keywords_lower: list[str],
+    keyword_scan_only: bool,
+) -> int:
+    total = 0
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIR_NAMES]
+        for fn in filenames:
+            full = os.path.join(dirpath, fn)
+            rel = os.path.relpath(full, root).replace("\\", "/")
+            if should_skip_path(rel):
+                continue
+            total += scan_single_file(
+                full,
+                rel,
+                repo,
+                rules,
+                redact,
+                include_certificates,
+                include_types,
+                exclude_types,
+                keywords_lower,
+                keyword_scan_only,
+            )
+    return total
+
+
+def http_json(
+    url: str,
+    token: str | None,
+    verbose: bool,
+) -> tuple[dict | list, dict[str, str]]:
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if token:
+        headers["Authorization"] = "Bearer {}".format(token)
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=60, context=get_ssl_context()) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+            hdrs = {k.lower(): v for k, v in resp.headers.items()}
+            return json.loads(body), hdrs
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode("utf-8", errors="replace")
+        if verbose:
+            print("ngit: HTTP {} {} — {}".format(e.code, url, err_body[:500]), file=sys.stderr)
+        raise
+    except urllib.error.URLError as e:
+        err_s = str(e).lower()
+        if "certificate verify failed" in err_s or "ssl" in err_s:
+            print(
+                "ngit: TLS verify failed (try: export SSL_CERT_FILE=/path/to/c.pem, "
+                "pip install certifi, Homebrew: /opt/homebrew/etc/ca-certificates/cert.pem, "
+                "or only for debugging: --insecure)",
+                file=sys.stderr,
+            )
+        if verbose:
+            print("ngit: URL error {} — {}".format(url, e), file=sys.stderr)
+        raise
+
+
+def fetch_search_repos(
+    query: str,
+    page: int,
+    per_page: int,
+    token: str | None,
+    verbose: bool,
+) -> tuple[list[dict], int, dict[str, str]]:
+    q = urllib.parse.urlencode(
+        {"q": query, "page": str(page), "per_page": str(per_page), "sort": "updated"}
+    )
+    url = "{}/search/repositories?{}".format(GITHUB_API, q)
+    data, hdrs = http_json(url, token, verbose)
+    if not isinstance(data, dict):
+        return [], 0, hdrs
+    items = data.get("items")
+    total = int(data.get("total_count", 0) or 0)
+    if not isinstance(items, list):
+        return [], total, hdrs
+    return [x for x in items if isinstance(x, dict)], total, hdrs
+
+
+def search_total_pages(total_count: int, per_page: int) -> int:
+    if total_count <= 0:
+        return 1
+    return min(34, (total_count + per_page - 1) // per_page)  # GitHub search ~1000 cap
+
+
+def iter_repo_slugs_for_scan(
+    count: int,
+    random_mode: bool,
+    search_query: str,
+    token: str | None,
+    verbose: bool,
+    seed: int | None,
+) -> Iterator[str]:
+    per_page = min(30, max(count, 1))
+    if seed is not None:
+        random.seed(seed)
+
+    if random_mode:
+        _, total, _ = fetch_search_repos(search_query, 1, per_page, token, verbose)
+        pages = max(1, search_total_pages(total, per_page))
+        wanted = set()
+        tries = 0
+        while len(wanted) < count and tries < pages * 3:
+            tries += 1
+            p = random.randint(1, pages)
+            items, _, _ = fetch_search_repos(search_query, p, per_page, token, verbose)
+            for it in items:
+                fn = it.get("full_name")
+                if isinstance(fn, str) and fn not in wanted:
+                    wanted.add(fn)
+                    yield fn
+                    if len(wanted) >= count:
+                        return
+        return
+
+    page = 1
+    seen = 0
+    while seen < count:
+        items, _, hdrs = fetch_search_repos(search_query, page, per_page, token, verbose)
+        if verbose and "x-ratelimit-remaining" in hdrs:
+            print(
+                "ngit: rate limit remaining {}".format(hdrs.get("x-ratelimit-remaining")),
+                file=sys.stderr,
+            )
+        if not items:
+            break
+        for it in items:
+            fn = it.get("full_name")
+            if isinstance(fn, str):
+                yield fn
+                seen += 1
+                if seen >= count:
+                    return
+        page += 1
+        if page > 34:
+            break
+
+
+def is_probably_binary(sample: bytes) -> bool:
+    if b"\x00" in sample[:8192]:
+        return True
+    return False
+
+
+def should_skip_path(rel: str) -> bool:
+    parts = rel.replace("\\", "/").split("/")
+    for p in parts:
+        if p in SKIP_DIR_NAMES:
+            return True
+    low = rel.lower()
+    for ext in SKIP_EXT:
+        if low.endswith(ext):
+            return True
+    return False
+
+
+def clone_repo(full_name: str, dest: str, token: str | None, verbose: bool) -> bool:
+    url = "https://github.com/{}.git".format(full_name)
+    cmd: list[str] = ["git"]
+    if token:
+        # Avoid embedding the token in the URL (visible in ps); use extraHeader.
+        cmd.extend(
+            ["-c", "http.extraHeader=Authorization: Bearer {}".format(token)]
+        )
+    cmd.extend(["clone", "--depth", "1", "--quiet", url, dest])
+    env = None
+    if _insecure_ssl:
+        env = os.environ.copy()
+        env["GIT_SSL_NO_VERIFY"] = "true"
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=300, env=env)
+        if r.returncode != 0:
+            if verbose:
+                print("ngit: git clone failed {}: {}".format(full_name, r.stderr[:400]), file=sys.stderr)
+            return False
+        return True
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+        if verbose:
+            print("ngit: clone error {}: {}".format(full_name, e), file=sys.stderr)
+        return False
+
+
+def scan_one_repo(
+    full_name: str,
+    token: str | None,
+    verbose: bool,
+    redact: bool,
+    rules: list[tuple[str, re.Pattern[str]]],
+    include_certificates: bool,
+    include_types: list[str],
+    exclude_types: list[str],
+    keywords_lower: list[str],
+    keyword_scan_only: bool,
+) -> int:
+    tmp = tempfile.mkdtemp(prefix="ngit-")
+    try:
+        if not clone_repo(full_name, tmp, token, verbose):
+            return 0
+        return scan_tree_stream(
+            tmp,
+            full_name,
+            rules,
+            redact,
+            include_certificates,
+            include_types,
+            exclude_types,
+            keywords_lower,
+            keyword_scan_only,
+        )
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def parse_extra_regex_args(items: list[str] | None) -> list[tuple[str, re.Pattern[str]]]:
+    """Parse --extra-regex LABEL=PATTERN (first '=' separates label from pattern)."""
+    out: list[tuple[str, re.Pattern[str]]] = []
+    if not items:
+        return out
+    label_ok = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,62}$")
+    for raw in items:
+        if "=" not in raw:
+            print("ngit: --extra-regex must be LABEL=PATTERN", file=sys.stderr)
+            sys.exit(2)
+        label, pat = raw.split("=", 1)
+        label = label.strip()
+        if not label_ok.match(label):
+            print(
+                "ngit: --extra-regex label must be [A-Za-z_][A-Za-z0-9_]{0,62}: {!r}".format(
+                    label
+                ),
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        try:
+            out.append((label, re.compile(pat)))
+        except re.error as e:
+            print(
+                "ngit: invalid regex for extra rule {!r}: {}".format(label, e),
+                file=sys.stderr,
+            )
+            sys.exit(2)
+    return out
+
+
+def main(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(
+        description="Scan GitHub repositories for common secret/password patterns (authorized use only)."
+    )
+    p.add_argument("--authorized", action="store_true", help="Acknowledge authorization to scan targets")
+    p.add_argument(
+        "--repo",
+        metavar="OWNER/NAME",
+        help="Scan a single public repository (clone + local pattern scan)",
+    )
+    p.add_argument(
+        "--scan-count",
+        type=int,
+        metavar="N",
+        default=0,
+        help="Scan N repositories from GitHub search (requires network + API)",
+    )
+    p.add_argument(
+        "--random",
+        action="store_true",
+        help="With --scan-count, choose repositories from random search pages",
+    )
+    p.add_argument(
+        "--search-query",
+        default="stars:>5 pushed:>2024-01-01",
+        metavar="QUERY",
+        help="GitHub code search query for repository discovery (default: active starred repos)",
+    )
+    p.add_argument(
+        "--token",
+        metavar="TOKEN",
+        help="GitHub token (or set GITHUB_TOKEN); raises API rate limits",
+    )
+    p.add_argument("--seed", type=int, default=None, help="RNG seed for --random")
+    p.add_argument(
+        "--insecure",
+        action="store_true",
+        help="Disable TLS certificate verification for HTTPS (insecure; debugging only)",
+    )
+    p.add_argument(
+        "--show-secrets",
+        action="store_true",
+        help="Print full matched values (default: redact/mask output)",
+    )
+    p.add_argument(
+        "--include-certificates",
+        action="store_true",
+        help="Also report PEM public X.509 blocks (-----BEGIN CERTIFICATE-----); "
+        "private keys are always scanned",
+    )
+    p.add_argument(
+        "--extra-regex",
+        action="append",
+        default=[],
+        metavar="LABEL=PATTERN",
+        help="Additional line-based rule (repeatable). First '=' splits label from "
+        "regex; use a capturing group for the secret or whole match is used",
+    )
+    p.add_argument(
+        "--type",
+        action="append",
+        default=[],
+        metavar="GLOB",
+        help="Only report findings whose type label matches a fnmatch glob "
+        "(e.g. aws*, pem_*); repeatable or comma-separated",
+    )
+    p.add_argument(
+        "--exclude-type",
+        action="append",
+        default=[],
+        metavar="GLOB",
+        help="Skip finding types matching this fnmatch glob (repeatable or comma-separated)",
+    )
+    p.add_argument(
+        "--keyword",
+        action="append",
+        default=[],
+        metavar="TEXT",
+        help="With normal scan: only emit secret hits on lines containing this substring "
+        "(case-insensitive). With --keyword-scan: search for this text (repeatable)",
+    )
+    p.add_argument(
+        "--keyword-file",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="File of keywords (one per line; # comments OK). Merged with --keyword",
+    )
+    p.add_argument(
+        "--keyword-scan",
+        action="store_true",
+        help="Keyword-only mode: clone and print lines containing any keyword "
+        "(no built-in secret regex or PEM scan). Requires --keyword and/or --keyword-file",
+    )
+    p.add_argument("--verbose", "-v", action="store_true")
+    p.add_argument("--version", action="store_true")
+    args = p.parse_args(argv)
+
+    if args.version:
+        print("ngit (nmap-xyberpix) {}".format(__version__))
+        return 0
+
+    auth_env = os.environ.get("NGIT_AUTHORIZED", "") == "1"
+    if not args.authorized and not auth_env:
+        print(
+            "ngit: refusing to run without --authorized or NGIT_AUTHORIZED=1",
+            file=sys.stderr,
+        )
+        print(
+            "ngit: use only on repositories you own or are explicitly permitted to test",
+            file=sys.stderr,
+        )
+        return 2
+
+    if args.insecure:
+        print(
+            "ngit: warning: --insecure disables TLS verification (API and git clone)",
+            file=sys.stderr,
+        )
+
+    init_ssl(args.insecure)
+
+    extra_rules = parse_extra_regex_args(args.extra_regex)
+    all_line_rules: list[tuple[str, re.Pattern[str]]] = list(RULES) + extra_rules
+
+    def expand_globs(items: list[str]) -> list[str]:
+        out: list[str] = []
+        for item in items:
+            for part in item.split(","):
+                s = part.strip()
+                if s:
+                    out.append(s)
+        return out
+
+    include_types = expand_globs(args.type)
+    exclude_types = expand_globs(args.exclude_type)
+
+    keywords_lower = [k.lower() for k in args.keyword]
+    keywords_lower.extend(load_keyword_file_paths(args.keyword_file))
+
+    keyword_scan_only = args.keyword_scan
+    if keyword_scan_only and not keywords_lower:
+        print(
+            "ngit: --keyword-scan requires at least one --keyword or --keyword-file",
+            file=sys.stderr,
+        )
+        return 2
+    if args.extra_regex and keyword_scan_only:
+        print(
+            "ngit: warning: --extra-regex is ignored with --keyword-scan",
+            file=sys.stderr,
+        )
+
+    rules: list[tuple[str, re.Pattern[str]]] = [
+        (n, rx)
+        for n, rx in all_line_rules
+        if rule_type_allowed(n, include_types, exclude_types)
+    ]
+
+    redact = not args.show_secrets
+    include_certificates = args.include_certificates
+
+    if args.show_secrets:
+        print(
+            "ngit: warning: printing full secret values to stdout (default is redacted; "
+            "avoid logs and shared terminals)",
+            file=sys.stderr,
+        )
+
+    token = args.token or os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+
+    if args.repo:
+        if args.scan_count:
+            print("ngit: --scan-count is ignored when --repo is set", file=sys.stderr)
+        fn = args.repo.strip()
+        if fn.count("/") != 1:
+            print("ngit: --repo must be OWNER/NAME", file=sys.stderr)
+            return 2
+        owner, name = fn.split("/", 1)
+        if not owner or not name or "/" in name:
+            print("ngit: invalid --repo", file=sys.stderr)
+            return 2
+        n = scan_one_repo(
+            fn,
+            token,
+            args.verbose,
+            redact,
+            rules,
+            include_certificates,
+            include_types,
+            exclude_types,
+            keywords_lower,
+            keyword_scan_only,
+        )
+        if args.verbose:
+            print("ngit: {} finding(s) in {}".format(n, fn), file=sys.stderr)
+        return 0
+
+    if args.scan_count <= 0:
+        print("ngit: specify --repo OWNER/NAME or --scan-count N", file=sys.stderr)
+        return 2
+
+    if not token and args.verbose:
+        print(
+            "ngit: no token; GitHub REST search rate limit is low (set GITHUB_TOKEN)",
+            file=sys.stderr,
+        )
+
+    total_hits = 0
+    scanned = 0
+    for slug in iter_repo_slugs_for_scan(
+        args.scan_count,
+        args.random,
+        args.search_query,
+        token,
+        args.verbose,
+        args.seed,
+    ):
+        scanned += 1
+        if args.verbose:
+            print("ngit: scanning {}/{} {}".format(scanned, args.scan_count, slug), file=sys.stderr)
+        total_hits += scan_one_repo(
+            slug,
+            token,
+            args.verbose,
+            redact,
+            rules,
+            include_certificates,
+            include_types,
+            exclude_types,
+            keywords_lower,
+            keyword_scan_only,
+        )
+
+    if args.verbose:
+        print(
+            "ngit: finished {} repo(s), {} finding(s)".format(scanned, total_hits),
+            file=sys.stderr,
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

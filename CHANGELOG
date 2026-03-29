@@ -1,5 +1,9 @@
 #Nmap Changelog ($Id$); -*-text-*-
 
+o [nmap-xyberpix] **`ngit`** (0.4): Filter by finding **`--type GLOB`** / **`--exclude-type`** (**`fnmatch`** on rule names and **`pem_*`** labels). **`--keyword`** limits secret hits to matching lines; **`--keyword-file`**; **`--keyword-scan`** for keyword-only line search (**`keyword_hit`**). **`ngit(1)`** updated.
+
+o [nmap-xyberpix] **`ngit`** (0.3): Shallow **`git clone`**, broad credential heuristics, **immediate** flushed findings. **Default: redacted** values; **`--show-secrets`** for full plaintext (warning). **`--include-certificates`** for PEM **X.509** (excludes CSR); private PEM always. **`--extra-regex LABEL=PATTERN`** (repeatable). Modes **`--repo`**, **`--scan-count`**, **`--random`**; **`--authorized`**; TLS **`SSL_CERT_FILE`** / **`certifi`** / **`--insecure`**; **`GITHUB_TOKEN`**. **`ngit(1)`**, **SECURITY-OVERVIEW**.
+
 o [nmap-xyberpix] **nfuzz** 0.7: **stream fuzzing** via **`--proto tcp|udp`** with **`--dst`**, **`--dport`**, and the same mutation flags as raw mode (payload from **`--hex`** / **`--hex-file`** or **`--proto-payload-len`** / default 256 zero bytes); optional **`--proto-reconnect`** and **`--proto-connect-timeout`**. **Bluetooth L2CAP** mode on **macOS** (**IOBluetooth**) and **Linux** (**BlueZ** / **`--bt-l2cap`**, **`--bt-psm`**, default PSM 4097). The **nfuzz** compile line uses **`-I.`** so **`nmap_config.h`** resolves; macOS links **`bt_l2cap_mac.m`** (**`-framework IOBluetooth`**) with **`-fno-objc-arc`**. Documented in **nfuzz(1)** and **SECURITY-OVERVIEW**.
 
 o [nmap-xyberpix] Security / robustness: **Zenmap** SAX parsers now disable
