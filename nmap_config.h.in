@@ -151,6 +151,8 @@ extern "C" int gethostname (char *, unsigned int);
 
 /* Used for -V. */
 #undef LUA_INCLUDED
+#undef HAVE_BLUETOOTH_L2CAP
+
 #undef PCAP_INCLUDED
 #undef DNET_INCLUDED
 #undef PCRE_INCLUDED

@@ -42,22 +42,22 @@
 /* use Ioctlsocket() for non-blocking sockets */
 #undef HAVE_IOCTLSOCKET_CASE
 
-/* Define if you have the bcrypt library. */
+/* Define if you have the libbcrypt library. */
 #undef HAVE_LIBBCRYPT
 
-/* Define if you have the gcrypt library. */
+/* Define if you have the libgcrypt library. */
 #undef HAVE_LIBGCRYPT
 
-/* Define if you have the mbedcrypto library. */
+/* Define if you have the libmbedcrypto library. */
 #undef HAVE_LIBMBEDCRYPTO
 
-/* Define if you have the ssl library. */
+/* Define if you have the libssl library. */
 #undef HAVE_LIBSSL
 
-/* Define if you have the wolfssl library. */
+/* Define if you have the libwolfssl library. */
 #undef HAVE_LIBWOLFSSL
 
-/* Define if you have the z library. */
+/* Define if you have the libz library. */
 #undef HAVE_LIBZ
 
 /* Define to 1 if you have the 'memset_s' function. */

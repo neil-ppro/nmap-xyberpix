@@ -1,6 +1,6 @@
 .TH NFUZZ 1 "March 2026" "nmap-xyberpix" "User Commands"
 .SH NAME
-nfuzz \- raw IPv4 packet mutation harness and optional HTTP browser\-fuzz server (nmap-xyberpix)
+nfuzz \- raw IPv4 / stream / Bluetooth L2CAP mutation harness and optional HTTP browser\-fuzz server (nmap-xyberpix)
 .SH SYNOPSIS
 .SS Raw IPv4 mode
 .B nfuzz
@@ -13,6 +13,24 @@ nfuzz \- raw IPv4 packet mutation harness and optional HTTP browser\-fuzz server
 .IR PATH | \-\-template
 .IR NAME ]
 .RI [ options ]
+.SS Stream mode (TCP or UDP payload)
+.B nfuzz
+.B \-\-authorized
+.BI \-\-proto " tcp|udp"
+.BI \-\-dst " ADDR"
+.BI \-\-dport " PORT"
+.RB [ \-\-hex
+.IR HEX | \-\-hex\-file
+.IR PATH ]
+.RI [ options ]
+.SS Bluetooth L2CAP mode (macOS or Linux)
+.B nfuzz
+.B \-\-authorized
+.BI \-\-bt\-l2cap " BD_ADDR"
+.RB [ \-\-hex
+.IR HEX | \-\-hex\-file
+.IR PATH ]
+.RI [ options ]
 .SS HTTP browser fuzz daemon
 .B nfuzz
 .B \-\-authorized
@@ -20,10 +38,20 @@ nfuzz \- raw IPv4 packet mutation harness and optional HTTP browser\-fuzz server
 .RI [ http-options ]
 .SH DESCRIPTION
 .B nfuzz
-has two modes. In
+supports several modes. In
 .B raw
 mode it sends mutated IPv4 datagrams using a raw socket
 .RB ( IP_HDRINCL ).
+In
+.B stream
+mode it connects or sends UDP datagrams to an IPv4 host and mutates an
+application\-layer payload (no raw socket).
+On builds with Bluetooth L2CAP support
+.RB ( \-\-bt\-l2cap ;
+macOS uses
+.BR IOBluetooth ,
+Linux uses BlueZ),
+it can mutate payloads over an L2CAP connection.
 In
 .B HTTP
 mode it listens on a TCP port and serves a
@@ -52,6 +80,8 @@ or a built\-in IPv4 stack chosen with
 layered similarly to interactive packet tools such as Scapy).
 The IPv4 version nibble must be 4 for hex input. Typical use requires superuser privileges.
 HTTP mode does not require raw socket privileges.
+Stream mode does not require raw socket privileges (TCP/UDP only).
+L2CAP mode uses the system Bluetooth stack (macOS may prompt for Bluetooth access; Linux may require capabilities; see local policy).
 .PP
 In the foreground (without
 .BR \-\-detach ),
@@ -153,6 +183,55 @@ as the host unless overridden here.
 Extra argument inserted before the URL (repeatable; maximum 32).
 Each argument must satisfy the same token rules as
 .BR \-\-browser\-cmd .
+.SS Stream mode (TCP/UDP)
+Mutually exclusive with raw IPv4 options
+.RB ( \-\-template ", " \-\-pcap ", fragmentation, " \-\-patch\-addresses ", " \-\-src ", IP/TCP option knobs)
+and with
+.BR \-\-bt\-l2cap .
+Requires
+.B \-\-dst
+and a non\-zero
+.BR \-\-dport .
+.TP
+.BI \-\-proto " tcp|udp"
+Use a stream socket
+.RB ( TCP )
+or datagram socket
+.RB ( UDP )
+to
+.BR \-\-dst :\-\-dport
+instead of raw IPv4.
+.TP
+.BI \-\-proto\-payload\-len " N"
+When
+.B \-\-hex
+and
+.B \-\-hex\-file
+are omitted, allocate
+.I N
+zero bytes as the base payload (default 256).
+.TP
+.B \-\-proto\-reconnect
+TCP only: perform a fresh connect for each iteration (default is one connection for the whole run).
+.TP
+.BI \-\-proto\-connect\-timeout " SEC"
+TCP connect wait in seconds (default 10, range 1\(en300).
+.SS Bluetooth L2CAP mode
+Available when
+.B nfuzz
+was built with Bluetooth support (macOS
+.BR IOBluetooth ;
+Linux
+.BR \-lbluetooth ).
+Mutually exclusive with raw mode and
+.BR \-\-proto .
+.TP
+.BI \-\-bt\-l2cap " ADDR"
+Peer Bluetooth address
+.RB ( XX:XX:XX:XX:XX:XX ).
+.TP
+.BI \-\-bt\-psm " N"
+L2CAP PSM in host byte order (default 4097).
 .SS Raw IPv4 mode
 .TP
 .BI \-\-dst " ADDR"
@@ -274,6 +353,10 @@ Start offset of the mutable region (default: end of IPv4 header).
 .TP
 .BI \-l ", " \-\-mutable\-len " L"
 Length of mutable region (default: through packet end).
+.PP
+Stream and L2CAP modes use the same
+.BR \-c ", " \-r ", " \-s ", " \-S ", " \-m ", and " \-l
+controls on the application payload; default mutable region is the full base payload (offset 0).
 .TP
 .B \-\-fix\-ip\-len
 Set IPv4 total length from buffer length (default: on).

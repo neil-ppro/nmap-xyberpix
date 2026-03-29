@@ -1,7 +1,10 @@
 /*
- * nfuzz — raw IPv4 packet mutation harness + optional HTTP fuzz server (nmap-xyberpix)
+ * nfuzz — raw IPv4 / TCP-UDP stream / optional Bluetooth L2CAP mutation harness
+ * plus optional HTTP fuzz server (nmap-xyberpix)
  *
  * Raw mode: sends crafted IPv4 datagrams via a raw socket (IP_HDRINCL).
+ * Stream mode: mutates an application payload over TCP or UDP to --dst/--dport.
+ * L2CAP mode (Linux + libbluetooth when built): mutates payloads over connected L2CAP.
  * HTTP mode: serves dynamically generated HTML/JS for authorized browser
  * (DOM/JS engine) fuzzing on a local or explicitly allowed bind address.
  *
@@ -32,6 +35,18 @@
 #include <strings.h>
 #include <time.h>
 #include <unistd.h>
+
+#ifdef HAVE_CONFIG_H
+#include "nmap_config.h"
+#endif
+#ifdef HAVE_BLUETOOTH_L2CAP
+#ifdef __APPLE__
+#include "bt_l2cap_mac.h"
+#else
+#include <bluetooth/bluetooth.h>
+#include <bluetooth/l2cap.h>
+#endif
+#endif
 
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -67,6 +82,12 @@
 #define NFUZZ_BROWSER_MAX_EXTRA 32
 #define NFUZZ_BROWSER_CMD_MAX 512
 #define NFUZZ_BROWSER_URL_MAX 768
+
+/* Stream (TCP/UDP) and L2CAP fuzzing: application payload only */
+#define NFUZZ_PROTO_DEFAULT_PAYLOAD 256
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
+#endif
 
 /* IPv4 "more fragments" flag (high byte of frag offset field, RFC 791). */
 #ifndef NFUZZ_IP_MF
@@ -829,7 +850,8 @@ static int run_http_daemon(const char *bind_spec, size_t max_body,
 static void usage(FILE *fp, const char *argv0)
 {
   fprintf(fp,
-"Usage: %s --authorized { --http-daemon [http-options] | raw-packet-options }\n"
+"Usage: %s --authorized { --http-daemon [http-options] | stream-options |\n"
+"                            bt-l2cap-options | raw-packet-options }\n"
 "\n"
 "Required:\n"
 "  --authorized              Acknowledge written authorization for the target.\n"
@@ -849,13 +871,23 @@ static void usage(FILE *fp, const char *argv0)
 "  --browser-url URL        Full URL to open (default: http://HOST:PORT/ from bind).\n"
 "  --browser-arg ARG        Extra argv before URL (repeatable; max %d).\n"
 "\n"
+"Stream mode (TCP or UDP application payload; mutually exclusive with raw and L2CAP):\n"
+"  --proto PROTO            tcp | udp — connect/sendto to --dst and --dport.\n"
+"  --proto-payload-len N    Base payload size when --hex/--hex-file omitted (default %d).\n"
+"  --proto-reconnect        TCP: new connection per iteration (default: one connection).\n"
+"  --proto-connect-timeout SEC  TCP connect wait (default 10, max 300).\n"
+"\n"
+"Bluetooth L2CAP mode (macOS IOBluetooth or Linux BlueZ when built; exclusive with raw and --proto):\n"
+"  --bt-l2cap ADDR          Peer BD_ADDR (XX:XX:XX:XX:XX:XX).\n"
+"  --bt-psm N               L2CAP PSM in host byte order (default 4097).\n"
+"\n"
 "Raw IPv4 mode:\n"
 "Target / addressing:\n"
 "  --dst ADDR                Destination IPv4 (also used for sendto).\n"
 "  --src ADDR                Patch IPv4 header source field (optional).\n"
 "  --patch-addresses         Apply --src/--dst to bytes 12-19 of the IP header.\n"
 "\n"
-"Payload (one of):\n"
+"Payload (one of; stream/L2CAP use application bytes only):\n"
 "  --hex-file PATH           Base datagram as hex (whitespace ignored).\n"
 "  --hex STRING              Base datagram as hex string.\n"
 "  --pcap PATH               Base datagram from IPv4 inside capture (libpcap; like Scapy rdpcap).\n"
@@ -902,13 +934,14 @@ static void usage(FILE *fp, const char *argv0)
           argv0, NFUZZ_HTTP_DEFAULT_BIND,
           (unsigned)NFUZZ_HTTP_DEFAULT_MAX_BODY,
           NFUZZ_HTTP_DEFAULT_REFRESH, NFUZZ_BROWSER_MAX_EXTRA,
+          NFUZZ_PROTO_DEFAULT_PAYLOAD,
           (unsigned long)NFUZZ_MAX_COUNT,
           NFUZZ_MAX_RATE);
 }
 
 static const char *version_string(void)
 {
-  return "nfuzz (nmap-xyberpix) 0.6";
+  return "nfuzz (nmap-xyberpix) 0.7";
 }
 
 static int xtoi(int c)
@@ -1583,6 +1616,294 @@ static void mutate_shuffle_block(unsigned char *buf, int off, int mlen, uint32_t
   }
 }
 
+/* Application payload for --proto / --bt-l2cap (not raw IPv4). */
+static int load_stream_base_payload(unsigned char *out, int outmax,
+    const char *hex_file, const char *hex_arg, size_t user_len, int user_explicit)
+{
+  if (hex_file != NULL)
+    return read_hex_file(hex_file, out, outmax);
+  if (hex_arg != NULL) {
+    int n = decode_hex_buffer(hex_arg, strlen(hex_arg), out, outmax);
+    return n;
+  }
+  size_t len = user_explicit ? user_len : (size_t)NFUZZ_PROTO_DEFAULT_PAYLOAD;
+  if (len > (size_t)outmax) {
+    fprintf(stderr, "nfuzz: stream payload length too large (max %d)\n", outmax);
+    return -1;
+  }
+  memset(out, 0, len);
+  return (int)len;
+}
+
+static int apply_payload_mutation(unsigned char *work, int len, int bufmax,
+    const char *strategy, long mut_off, long mut_len, uint32_t *rng)
+{
+  int moff = mut_off >= 0 ? (int)mut_off : 0;
+  int mlen = mut_len >= 0 ? (int)mut_len : (len - moff);
+  if (moff < 0 || moff > len || mlen < 0 || moff + mlen > len) {
+    fprintf(stderr, "nfuzz: stream/bt: invalid mutable region\n");
+    return -1;
+  }
+  if (strcasecmp(strategy, "bitflip") == 0)
+    mutate_bitflip(work, moff, mlen, rng);
+  else if (strcasecmp(strategy, "random_byte") == 0)
+    mutate_random_byte(work, moff, mlen, rng);
+  else if (strcasecmp(strategy, "inc_byte") == 0)
+    mutate_inc_byte(work, moff, mlen, rng);
+  else if (strcasecmp(strategy, "dec_byte") == 0)
+    mutate_dec_byte(work, moff, mlen, rng);
+  else if (strcasecmp(strategy, "truncate") == 0)
+    len = mutate_truncate(work, len, moff, mlen, rng);
+  else if (strcasecmp(strategy, "append_random") == 0)
+    len = mutate_append(work, len, rng);
+  else if (strcasecmp(strategy, "shuffle_block") == 0)
+    mutate_shuffle_block(work, moff, mlen, rng);
+  else {
+    fprintf(stderr, "nfuzz: unknown strategy %s\n", strategy);
+    return -1;
+  }
+  if (len < 1)
+    len = 1;
+  if (len > bufmax)
+    len = bufmax;
+  return len;
+}
+
+static int tcp_connect_with_timeout(struct in_addr *dst, uint16_t port, int timeout_sec)
+{
+  int fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (fd < 0) {
+    perror("nfuzz: socket(tcp)");
+    return -1;
+  }
+  int fl = fcntl(fd, F_GETFL, 0);
+  if (fl < 0 || fcntl(fd, F_SETFL, fl | O_NONBLOCK) != 0) {
+    perror("nfuzz: fcntl(tcp)");
+    close(fd);
+    return -1;
+  }
+  struct sockaddr_in sin;
+  memset(&sin, 0, sizeof(sin));
+  sin.sin_family = AF_INET;
+  sin.sin_port = htons(port);
+  sin.sin_addr = *dst;
+  int cr = connect(fd, (struct sockaddr *)&sin, sizeof(sin));
+  if (cr < 0 && errno != EINPROGRESS) {
+    fprintf(stderr, "nfuzz: connect: %s\n", strerror(errno));
+    close(fd);
+    return -1;
+  }
+  struct pollfd pfd;
+  pfd.fd = fd;
+  pfd.events = POLLOUT;
+  int pr = poll(&pfd, 1, timeout_sec * 1000);
+  if (pr <= 0) {
+    fprintf(stderr, "nfuzz: tcp connect timed out or failed\n");
+    close(fd);
+    return -1;
+  }
+  int soerr = 0;
+  socklen_t sl = sizeof(soerr);
+  if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &soerr, &sl) != 0 || soerr != 0) {
+    fprintf(stderr, "nfuzz: tcp connect error: %s\n",
+        soerr != 0 ? strerror(soerr) : "getsockopt");
+    close(fd);
+    return -1;
+  }
+  if (fcntl(fd, F_SETFL, fl) != 0) {
+    perror("nfuzz: fcntl(tcp clear nonblock)");
+    close(fd);
+    return -1;
+  }
+#ifdef SO_NOSIGPIPE
+  {
+    int one = 1;
+    (void)setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
+  }
+#endif
+  return fd;
+}
+
+static int run_proto_stream_fuzz(struct in_addr *dst, uint16_t dport, int use_tcp,
+    unsigned char *template, int tlen, unsigned long count, unsigned rate,
+    const char *strategy, long mut_off, long mut_len, long seed_arg,
+    int proto_reconnect, int connect_to_sec)
+{
+  uint32_t rng = (uint32_t)(seed_arg >= 0 ? seed_arg : (long)time(NULL) ^ (long)now_ns());
+  if (rng == 0)
+    rng = 0xcafebabeu;
+  unsigned char work[NFUZZ_MAX_PACKET];
+  unsigned long interval_ns = rate > 0 ? 1000000000UL / rate : 0;
+  int tfd = -1;
+
+  if (!use_tcp) {
+    tfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (tfd < 0) {
+      perror("nfuzz: socket(udp)");
+      return 1;
+    }
+  } else if (!proto_reconnect) {
+    tfd = tcp_connect_with_timeout(dst, dport, connect_to_sec);
+    if (tfd < 0)
+      return 1;
+  }
+
+  struct sockaddr_in peer;
+  memset(&peer, 0, sizeof(peer));
+  peer.sin_family = AF_INET;
+  peer.sin_port = htons(dport);
+  peer.sin_addr = *dst;
+
+  for (unsigned long n = 0; n < count; n++) {
+    if (use_tcp && proto_reconnect) {
+      if (tfd >= 0)
+        close(tfd);
+      tfd = tcp_connect_with_timeout(dst, dport, connect_to_sec);
+      if (tfd < 0)
+        return 1;
+    }
+
+    memcpy(work, template, (size_t)tlen);
+    int len = tlen;
+    len = apply_payload_mutation(work, len, NFUZZ_MAX_PACKET, strategy, mut_off,
+        mut_len, &rng);
+    if (len < 0)
+      goto fail;
+
+    if (use_tcp) {
+      size_t off = 0;
+      while (off < (size_t)len) {
+        ssize_t sent = send(tfd, work + off, (size_t)len - off, MSG_NOSIGNAL);
+        if (sent <= 0) {
+          fprintf(stderr, "nfuzz: send(tcp): %s\n",
+              sent < 0 ? strerror(errno) : "closed");
+          goto fail;
+        }
+        off += (size_t)sent;
+      }
+    } else {
+      ssize_t sent = sendto(tfd, work, (size_t)len, 0, (struct sockaddr *)&peer,
+          sizeof(peer));
+      if (sent < 0) {
+        perror("nfuzz: sendto(udp)");
+        goto fail;
+      }
+    }
+
+    if (rate > 0 && interval_ns > 0) {
+      struct timespec sl;
+      sl.tv_sec = (time_t)(interval_ns / 1000000000UL);
+      sl.tv_nsec = (long)(interval_ns % 1000000000UL);
+      nanosleep(&sl, NULL);
+    }
+  }
+
+  if (tfd >= 0)
+    close(tfd);
+  fprintf(stderr, "nfuzz: sent %lu stream payload(s)\n", count);
+  return 0;
+
+fail:
+  if (tfd >= 0)
+    close(tfd);
+  return 1;
+}
+
+#ifdef HAVE_BLUETOOTH_L2CAP
+static int run_bt_l2cap_fuzz(const char *bdstr, uint16_t psm_host_order,
+    unsigned char *template, int tlen, unsigned long count, unsigned rate,
+    const char *strategy, long mut_off, long mut_len, long seed_arg)
+{
+  uint32_t rng = (uint32_t)(seed_arg >= 0 ? seed_arg : (long)time(NULL) ^ (long)now_ns());
+  if (rng == 0)
+    rng = 0xbaddc0deu;
+  unsigned char work[NFUZZ_MAX_PACKET];
+  unsigned long interval_ns = rate > 0 ? 1000000000UL / rate : 0;
+
+#ifdef __APPLE__
+  void *bt = NULL;
+  int o = nfuzz_bt_mac_open(bdstr, psm_host_order, &bt);
+  if (o == -1) {
+    fprintf(stderr, "nfuzz: bad Bluetooth address (use XX:XX:XX:XX:XX:XX)\n");
+    return 2;
+  }
+  if (o != 0 || bt == NULL) {
+    fprintf(stderr, "nfuzz: L2CAP connect failed (is the peer paired/in range?)\n");
+    return 1;
+  }
+  for (unsigned long n = 0; n < count; n++) {
+    memcpy(work, template, (size_t)tlen);
+    int len = tlen;
+    len = apply_payload_mutation(work, len, NFUZZ_MAX_PACKET, strategy, mut_off,
+        mut_len, &rng);
+    if (len < 0) {
+      nfuzz_bt_mac_close(bt);
+      return 1;
+    }
+    if (nfuzz_bt_mac_send(bt, work, len) != 0) {
+      fprintf(stderr, "nfuzz: l2cap send failed\n");
+      nfuzz_bt_mac_close(bt);
+      return 1;
+    }
+    if (rate > 0 && interval_ns > 0) {
+      struct timespec sl;
+      sl.tv_sec = (time_t)(interval_ns / 1000000000UL);
+      sl.tv_nsec = (long)(interval_ns % 1000000000UL);
+      nanosleep(&sl, NULL);
+    }
+  }
+  nfuzz_bt_mac_close(bt);
+#else
+  bdaddr_t ba;
+  if (str2ba(bdstr, &ba) < 0) {
+    fprintf(stderr, "nfuzz: bad Bluetooth address (use XX:XX:XX:XX:XX:XX)\n");
+    return 2;
+  }
+  int s = socket(PF_BLUETOOTH, SOCK_SEQPACKET, BTPROTO_L2CAP);
+  if (s < 0) {
+    perror("nfuzz: socket(BT_L2CAP)");
+    return 1;
+  }
+  struct sockaddr_l2 addr;
+  memset(&addr, 0, sizeof(addr));
+  addr.l2_family = AF_BLUETOOTH;
+  addr.l2_bdaddr = ba;
+  addr.l2_psm = htobs(psm_host_order);
+  if (connect(s, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+    perror("nfuzz: l2cap connect");
+    close(s);
+    return 1;
+  }
+
+  for (unsigned long n = 0; n < count; n++) {
+    memcpy(work, template, (size_t)tlen);
+    int len = tlen;
+    len = apply_payload_mutation(work, len, NFUZZ_MAX_PACKET, strategy, mut_off,
+        mut_len, &rng);
+    if (len < 0) {
+      close(s);
+      return 1;
+    }
+    ssize_t w = send(s, work, (size_t)len, 0);
+    if (w < 0) {
+      perror("nfuzz: l2cap send");
+      close(s);
+      return 1;
+    }
+    if (rate > 0 && interval_ns > 0) {
+      struct timespec sl;
+      sl.tv_sec = (time_t)(interval_ns / 1000000000UL);
+      sl.tv_nsec = (long)(interval_ns % 1000000000UL);
+      nanosleep(&sl, NULL);
+    }
+  }
+  close(s);
+#endif
+  fprintf(stderr, "nfuzz: sent %lu L2CAP payload(s)\n", count);
+  return 0;
+}
+#endif /* HAVE_BLUETOOTH_L2CAP */
+
 static int parse_inaddr(const char *s, struct in_addr *out)
 {
   return inet_pton(AF_INET, s, out) == 1 ? 0 : -1;
@@ -1642,6 +1963,15 @@ int main(int argc, char **argv)
   const char *ip_opt_hex = NULL;
   const char *tcp_opt_hex = NULL;
   unsigned tcp_mss = 0;
+  int proto_mode = 0; /* 0=off, 1=tcp, 2=udp */
+  size_t proto_payload_len = 0;
+  int proto_payload_explicit = 0;
+  int proto_reconnect = 0;
+  int proto_connect_to = 10;
+  const char *bt_l2cap_str = NULL;
+#ifdef HAVE_BLUETOOTH_L2CAP
+  unsigned bt_psm = 0;
+#endif
 
   for (int i = 1; i < argc; i++) {
     const char *a = argv[i];
@@ -1909,6 +2239,90 @@ int main(int argc, char **argv)
         return 2;
       }
       tcp_mss = (unsigned)strtoul(argv[i], NULL, 10);
+    } else if (strncmp(a, "--proto=", 8) == 0) {
+      const char *p = a + 8;
+      if (strcasecmp(p, "tcp") == 0)
+        proto_mode = 1;
+      else if (strcasecmp(p, "udp") == 0)
+        proto_mode = 2;
+      else {
+        fprintf(stderr, "nfuzz: --proto must be tcp or udp\n");
+        return 2;
+      }
+    } else if (strcmp(a, "--proto") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "nfuzz: missing value after %s\n", a);
+        return 2;
+      }
+      const char *p = argv[i];
+      if (strcasecmp(p, "tcp") == 0)
+        proto_mode = 1;
+      else if (strcasecmp(p, "udp") == 0)
+        proto_mode = 2;
+      else {
+        fprintf(stderr, "nfuzz: --proto must be tcp or udp\n");
+        return 2;
+      }
+    } else if (strncmp(a, "--proto-payload-len=", 20) == 0) {
+      proto_payload_len = (size_t)strtoul(a + 20, NULL, 10);
+      proto_payload_explicit = 1;
+    } else if (strcmp(a, "--proto-payload-len") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "nfuzz: missing value after %s\n", a);
+        return 2;
+      }
+      proto_payload_len = (size_t)strtoul(argv[i], NULL, 10);
+      proto_payload_explicit = 1;
+    } else if (strcmp(a, "--proto-reconnect") == 0) {
+      proto_reconnect = 1;
+    } else if (strncmp(a, "--proto-connect-timeout=", 24) == 0) {
+      proto_connect_to = (int)strtol(a + 24, NULL, 10);
+    } else if (strcmp(a, "--proto-connect-timeout") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "nfuzz: missing value after %s\n", a);
+        return 2;
+      }
+      proto_connect_to = (int)strtol(argv[i], NULL, 10);
+    } else if (strncmp(a, "--bt-l2cap=", 11) == 0) {
+      bt_l2cap_str = a + 11;
+    } else if (strcmp(a, "--bt-l2cap") == 0) {
+      if (++i >= argc) {
+        fprintf(stderr, "nfuzz: missing value after %s\n", a);
+        return 2;
+      }
+      bt_l2cap_str = argv[i];
+    } else if (strncmp(a, "--bt-psm=", 9) == 0) {
+#ifdef HAVE_BLUETOOTH_L2CAP
+      unsigned long v = strtoul(a + 9, NULL, 10);
+      if (v > 65535) {
+        fprintf(stderr, "nfuzz: --bt-psm out of range\n");
+        return 2;
+      }
+      bt_psm = (unsigned)v;
+#else
+      fprintf(stderr,
+          "nfuzz: --bt-psm is not available in this build "
+          "(need macOS or Linux with libbluetooth)\n");
+      return 2;
+#endif
+    } else if (strcmp(a, "--bt-psm") == 0) {
+#ifdef HAVE_BLUETOOTH_L2CAP
+      if (++i >= argc) {
+        fprintf(stderr, "nfuzz: missing value after %s\n", a);
+        return 2;
+      }
+      unsigned long v = strtoul(argv[i], NULL, 10);
+      if (v > 65535) {
+        fprintf(stderr, "nfuzz: --bt-psm out of range\n");
+        return 2;
+      }
+      bt_psm = (unsigned)v;
+#else
+      fprintf(stderr,
+          "nfuzz: --bt-psm is not available in this build "
+          "(need macOS or Linux with libbluetooth)\n");
+      return 2;
+#endif
     } else if (strncmp(a, "--dst=", 6) == 0) {
       dst_str = a + 6;
     } else if (strcmp(a, "--dst") == 0) {
@@ -2031,6 +2445,95 @@ int main(int argc, char **argv)
     return run_http_daemon(http_bind, http_max_body, http_refresh, do_detach,
         pid_file, http_allow_remote, seed_arg, &brw);
   }
+
+  int have_bt = (bt_l2cap_str != NULL);
+#ifndef HAVE_BLUETOOTH_L2CAP
+  if (have_bt) {
+    fprintf(stderr,
+        "nfuzz: --bt-l2cap is not available in this build "
+        "(need macOS or Linux with libbluetooth)\n");
+    return 2;
+  }
+#endif
+  int stream_or_bt = (proto_mode != 0) || have_bt;
+  if (stream_or_bt) {
+    if (template_name != NULL || pcap_file != NULL || frag_mtu != 0
+        || patch_addresses || src_str != NULL || ip_opt_hex != NULL
+        || tcp_opt_hex != NULL || tcp_mss > 0) {
+      fprintf(stderr,
+          "nfuzz: --proto/--bt-l2cap cannot be combined with raw IPv4-only options\n");
+      return 2;
+    }
+  }
+  if (proto_mode != 0 && have_bt) {
+    fprintf(stderr, "nfuzz: --proto and --bt-l2cap are mutually exclusive\n");
+    return 2;
+  }
+  if (proto_reconnect && proto_mode != 1) {
+    fprintf(stderr, "nfuzz: --proto-reconnect applies only to --proto tcp\n");
+    return 2;
+  }
+  if (proto_connect_to < 1 || proto_connect_to > 300) {
+    fprintf(stderr, "nfuzz: --proto-connect-timeout must be 1..300\n");
+    return 2;
+  }
+
+  if (proto_mode != 0) {
+    if (!dst_str || tpl_dport == 0) {
+      fprintf(stderr, "nfuzz: --proto requires --dst and a non-zero --dport\n");
+      return 2;
+    }
+    if (count < 1 || count > NFUZZ_MAX_COUNT) {
+      fprintf(stderr, "nfuzz: count out of range\n");
+      return 2;
+    }
+    if (rate > NFUZZ_MAX_RATE) {
+      fprintf(stderr, "nfuzz: rate out of range\n");
+      return 2;
+    }
+    struct in_addr dst_addr;
+    if (parse_inaddr(dst_str, &dst_addr) != 0) {
+      fprintf(stderr, "nfuzz: bad --dst\n");
+      return 2;
+    }
+    unsigned char stream_tpl[NFUZZ_MAX_PACKET];
+    int stlen = load_stream_base_payload(stream_tpl, NFUZZ_MAX_PACKET, hex_file,
+        hex_arg, proto_payload_len, proto_payload_explicit);
+    if (stlen < 0)
+      return 2;
+    if (stlen == 0) {
+      stream_tpl[0] = 0;
+      stlen = 1;
+    }
+    return run_proto_stream_fuzz(&dst_addr, tpl_dport, proto_mode == 1, stream_tpl,
+        stlen, count, rate, strategy, mut_off, mut_len, seed_arg, proto_reconnect,
+        proto_connect_to);
+  }
+
+#ifdef HAVE_BLUETOOTH_L2CAP
+  if (have_bt) {
+    if (count < 1 || count > NFUZZ_MAX_COUNT) {
+      fprintf(stderr, "nfuzz: count out of range\n");
+      return 2;
+    }
+    if (rate > NFUZZ_MAX_RATE) {
+      fprintf(stderr, "nfuzz: rate out of range\n");
+      return 2;
+    }
+    unsigned psm_use = bt_psm != 0 ? bt_psm : 4097u;
+    unsigned char stream_tpl[NFUZZ_MAX_PACKET];
+    int stlen = load_stream_base_payload(stream_tpl, NFUZZ_MAX_PACKET, hex_file,
+        hex_arg, proto_payload_len, proto_payload_explicit);
+    if (stlen < 0)
+      return 2;
+    if (stlen == 0) {
+      stream_tpl[0] = 0;
+      stlen = 1;
+    }
+    return run_bt_l2cap_fuzz(bt_l2cap_str, (uint16_t)psm_use, stream_tpl, stlen,
+        count, rate, strategy, mut_off, mut_len, seed_arg);
+  }
+#endif
 
   if (!dst_str) {
     fprintf(stderr, "nfuzz: --dst ADDR is required (raw mode)\n");

@@ -356,6 +356,8 @@ case "$host" in
     with_nfuzz="no"
     ;;
 esac
+NFUZZ_BT_LIBS=""
+NFUZZ_BT_OBJ=""
 if test "$with_nfuzz" = "no"; then
   BUILDNFUZZ=""
   INSTALLNFUZZ=""
@@ -366,11 +368,30 @@ else
   INSTALLNFUZZ=install-nfuzz
   UNINSTALLNFUZZ=uninstall-nfuzz
   NFUZZ_CLEAN=clean-nfuzz
+  case "$host" in
+    *-*-darwin*)
+      NFUZZ_BT_LIBS="-framework IOBluetooth -framework Foundation"
+      NFUZZ_BT_OBJ="nfuzz/bt_l2cap_mac.o"
+      AC_DEFINE([HAVE_BLUETOOTH_L2CAP], [1], [IOBluetooth L2CAP for nfuzz --bt-l2cap on macOS])
+      ;;
+    *-*-linux*)
+      AC_CHECK_HEADER([bluetooth/bluetooth.h], [
+        AC_CHECK_HEADER([bluetooth/l2cap.h], [
+          AC_CHECK_LIB([bluetooth], [str2ba], [
+            NFUZZ_BT_LIBS="-lbluetooth"
+            AC_DEFINE([HAVE_BLUETOOTH_L2CAP], [1], [BlueZ L2CAP for nfuzz --bt-l2cap])
+          ], [], [])
+        ], [], [])
+      ], [], [])
+      ;;
+  esac
 fi
 AC_SUBST(BUILDNFUZZ)
 AC_SUBST(INSTALLNFUZZ)
 AC_SUBST(UNINSTALLNFUZZ)
 AC_SUBST(NFUZZ_CLEAN)
+AC_SUBST(NFUZZ_BT_LIBS)
+AC_SUBST(NFUZZ_BT_OBJ)
 
 # OpenSSL and NSE C modules can require dlopen
 AC_SEARCH_LIBS(dlopen, dl)

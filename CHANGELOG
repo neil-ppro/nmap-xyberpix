@@ -1,5 +1,7 @@
 #Nmap Changelog ($Id$); -*-text-*-
 
+o [nmap-xyberpix] **nfuzz** 0.7: **stream fuzzing** via **`--proto tcp|udp`** with **`--dst`**, **`--dport`**, and the same mutation flags as raw mode (payload from **`--hex`** / **`--hex-file`** or **`--proto-payload-len`** / default 256 zero bytes); optional **`--proto-reconnect`** and **`--proto-connect-timeout`**. **Bluetooth L2CAP** mode on **macOS** (**IOBluetooth**) and **Linux** (**BlueZ** / **`--bt-l2cap`**, **`--bt-psm`**, default PSM 4097). The **nfuzz** compile line uses **`-I.`** so **`nmap_config.h`** resolves; macOS links **`bt_l2cap_mac.m`** (**`-framework IOBluetooth`**) with **`-fno-objc-arc`**. Documented in **nfuzz(1)** and **SECURITY-OVERVIEW**.
+
 o [nmap-xyberpix] Security / robustness: **Zenmap** SAX parsers now disable
   **external XML entities**, use an empty **entity resolver**, and cap memory for
   large **interactive output** text (32 MiB) and **RadialNet** per-element text
