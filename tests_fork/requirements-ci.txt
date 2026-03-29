@@ -1,0 +1,6 @@
+# Pinned deps for tests_fork/ + GUI argv tests (CI: Python 3.12; also works on 3.13+).
+# Regenerate periodically; run: pip-audit -r tests_fork/requirements-ci.txt
+pytest==8.3.4
+pytest-qt==4.4.0
+PySide6==6.10.2
+pip-audit==2.7.3

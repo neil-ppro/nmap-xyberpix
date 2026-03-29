@@ -90,6 +90,10 @@ narrows secret/regex hits to lines containing a substring;
 searches only for keywords (type
 .BR keyword_hit ).
 Heuristic rules produce false positives.
+Regex matches per line and PEM blocks per file are capped to limit pathological
+input cost (see fork
+.B CHANGELOG
+entries).
 .SH OPTIONS
 .TP
 .B \-\-authorized

@@ -44,6 +44,17 @@ make
 cd mcp-nmap-server && python3 -m venv .venv && .venv/bin/pip install -e '.[dev]' && .venv/bin/python -m pytest tests/ -q
 ```
 
+Fork-owned Python tests (**ngit**, **argv_utils**, **PySide6** GUI argv tests) and **`pip-audit`** on pinned deps:
+
+```bash
+python3 -m pip install -U pip
+python3 -m pip install -r tests_fork/requirements-ci.txt
+QT_QPA_PLATFORM=offscreen python3 -m pytest tests_fork/ -q --tb=short
+pip-audit -r tests_fork/requirements-ci.txt
+```
+
+See [FORK-MAINTENANCE.md](FORK-MAINTENANCE.md) for the full checklist.
+
 ```bash
 python3 maint/check_zenmap_siem_flags.py
 python3 maint/check_offsec_mcp_sync.py

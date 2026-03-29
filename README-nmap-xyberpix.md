@@ -44,7 +44,9 @@ Point `NMAP_MCP_BINARY` at your built `nmap` if it is not on `PATH`; for offsec 
 
 | Topic | Where to read |
 |--------|----------------|
+| **Operator entry point** (acknowledgements, env vars, “who reads what”) | [docs/security/OPERATORS.md](docs/security/OPERATORS.md) |
 | **Single overview** (threat model, env vars, links) | [docs/security/SECURITY-OVERVIEW.md](docs/security/SECURITY-OVERVIEW.md) |
+| **Fork maintenance** (merge checklist, fork-owned paths, `tests_fork/`) | [docs/FORK-MAINTENANCE.md](docs/FORK-MAINTENANCE.md) |
 | **MCP** tools, presets, client config | [mcp-nmap-server/README.md](mcp-nmap-server/README.md) |
 | **MCP** argv / target injection notes | [docs/security/MCP-TARGET-ARGV-INJECTION.md](docs/security/MCP-TARGET-ARGV-INJECTION.md) |
 | **MCP** scan-options policy bypass write-ups | [docs/security/MCP-SCAN-OPTIONS-POLICY-BYPASS.md](docs/security/MCP-SCAN-OPTIONS-POLICY-BYPASS.md) |
@@ -55,7 +57,7 @@ Point `NMAP_MCP_BINARY` at your built `nmap` if it is not on `PATH`; for offsec 
 | **Merging upstream** Nmap | [docs/UPSTREAM-MERGE.md](docs/UPSTREAM-MERGE.md) |
 | **Fork file boundary** (merge hints) | [maint/FORK-FILES.md](maint/FORK-FILES.md) |
 
-Illustrative PoCs live under [docs/security/](docs/security/). CI (`.github/workflows/nmap-xyberpix-checks.yml`) runs MCP **pytest on Ubuntu and Windows**, maintainer sync scripts, a **`nmap.cc` long-options baseline** (fail on new `--long-opt` until the baseline is refreshed and MCP safe mode is reviewed), and **SIEM smoke** using a built `nmap` binary passed between jobs via artifacts. **`maint/check_zenmap_siem_flags.py`** ties **Zenmap** `LONG_OPTIONS` and **`profile_editor.xml`** (SIEM tab tooltips) to the same long-option list as `nmap.cc`, modulo **`maint/data/zenmap-nmap-longopt-exceptions.txt`** for GUI omissions.
+Illustrative PoCs live under [docs/security/](docs/security/). CI (`.github/workflows/nmap-xyberpix-checks.yml`) runs MCP **pytest on Ubuntu and Windows**, **`tests_fork/`** (ngit + **argv_utils** + **PySide6** GUI argv tests, **`pip-audit -r tests_fork/requirements-ci.txt`**), maintainer sync scripts, a **`nmap.cc` long-options baseline** (fail on new `--long-opt` until the baseline is refreshed and MCP safe mode is reviewed), **SIEM smoke** using a built `nmap` binary passed between jobs via artifacts, and on Ubuntu **`make build-nfuzz`** plus **`nfuzz --version`**. **`maint/check_zenmap_siem_flags.py`** ties **Zenmap** `LONG_OPTIONS` and **`profile_editor.xml`** (SIEM tab tooltips) to the same long-option list as `nmap.cc`, modulo **`maint/data/zenmap-nmap-longopt-exceptions.txt`** for GUI omissions.
 
 ## Upstream relationship
 

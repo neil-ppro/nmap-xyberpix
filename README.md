@@ -23,8 +23,9 @@ This tree is **nmap-xyberpix**: Nmap plus SIEM-oriented logging, scan-policy and
 decoy-hardening options, optional **MCP** integration ([mcp-nmap-server/](mcp-nmap-server/)),
 and additional offensive-research **NSE** scripts. For a concise diff vs upstream,
 build steps, and **security documentation** (MCP policy, offsec scripts, PoC
-notes), see [README-nmap-xyberpix.md](README-nmap-xyberpix.md). Fork-specific release
-notes appear in [CHANGELOG](CHANGELOG) under `[nmap-xyberpix]` / `[SIEM]`.
+notes), see [README-nmap-xyberpix.md](README-nmap-xyberpix.md). Operator-focused
+security routing: [docs/security/OPERATORS.md](docs/security/OPERATORS.md).
+Fork-specific release notes appear in [CHANGELOG](CHANGELOG) under `[nmap-xyberpix]` / `[SIEM]`.
 
 Installing
 ----------

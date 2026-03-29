@@ -28,13 +28,20 @@ Paths below are **likely to conflict** or are **fork-specific**. Use this when m
 
 ## Security & operator docs
 
-- `docs/security/*.md`
+- `docs/security/*.md` (incl. **OPERATORS.md**)
+- `docs/FORK-MAINTENANCE.md`
 - `docs/nse-offsec-scripts.md`
 - `docs/IDS-EVASION-NMAP-XYBERPIX.md`
 - `docs/SIEM-NDJSON-SCHEMA.md`
 - `docs/examples/siem/README.md`
 - `docs/security/SECURITY-OVERVIEW.md`
 - `README-nmap-xyberpix.md`, root `README.md` (fork overview)
+
+## Tests (fork Python)
+
+- `tests_fork/` — **ngit**, **xyberpix-gui** `argv_utils` / `binaries`, PySide6 GUI argv tests (CI: `nmap-xyberpix-checks`)
+- `tests_fork/requirements-ci.txt` — pinned **pytest**, **pytest-qt**, **PySide6**, **pip-audit**
+- `pytest.ini` (repo root) — `testpaths = tests_fork`
 
 ## Maintenance / CI
 

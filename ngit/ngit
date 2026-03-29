@@ -26,7 +26,7 @@ if sys.version_info < (3, 9):
     print("ngit: Python 3.9 or newer is required", file=sys.stderr)
     sys.exit(2)
 
-__version__ = "0.4.1"
+__version__ = "0.4.2"
 
 USER_AGENT = "ngit/{} (nmap-xyberpix; security research)".format(__version__)
 GITHUB_API = "https://api.github.com"
@@ -40,6 +40,9 @@ MAX_SEARCH_QUERY_LEN = 512
 # Keyword from CLI or file (memory / pathological input).
 MAX_KEYWORD_LEN = 2048
 MAX_KEYWORD_FILE_LINES = 100_000
+# Per-line / per-file caps on regex matches (ReDoS / pathological line mitigation).
+NGIT_MAX_REGEX_MATCHES_PER_LINE = 64
+NGIT_MAX_PEM_MATCHES_PER_FILE = 32
 # GitHub owner/name: ASCII only (API + --repo); rejects shell metacharacters / odd URLs.
 _MAX_SLUG_SEGMENT_LEN = 200
 _SLUG_SEGMENT_RE = re.compile(r"^[A-Za-z0-9._-]{1,%d}$" % _MAX_SLUG_SEGMENT_LEN)
@@ -428,7 +431,11 @@ def scan_line_findings(
         if not line_matches_keywords(line, keywords_lower):
             continue
         for name, rx in rules:
+            nmatch = 0
             for m in rx.finditer(line):
+                nmatch += 1
+                if nmatch > NGIT_MAX_REGEX_MATCHES_PER_LINE:
+                    break
                 g = m.group(1) if m.lastindex else m.group(0)
                 g = g.strip()
                 if g:
@@ -451,7 +458,11 @@ def scan_keyword_hits_only(
 def scan_pem_findings(text: str, include_certificates: bool) -> list[tuple[int, str, str]]:
     """PEM blocks: private keys always; optional public X.509 via include_certificates."""
     out: list[tuple[int, str, str]] = []
+    npem = 0
     for m in PEM_BLOCK_PATTERN.finditer(text):
+        npem += 1
+        if npem > NGIT_MAX_PEM_MATCHES_PER_FILE:
+            break
         kind = m.group(1).strip()
         ku = kind.upper()
         if "PRIVATE" in ku:
@@ -788,7 +799,7 @@ def parse_extra_regex_args(items: list[str] | None) -> list[tuple[str, re.Patter
         label = label.strip()
         if not label_ok.match(label):
             print(
-                "ngit: --extra-regex label must be [A-Za-z_][A-Za-z0-9_]{0,62}: {!r}".format(
+                "ngit: --extra-regex label must be [A-Za-z_][A-Za-z0-9_]{{0,62}}: {!r}".format(
                     label
                 ),
                 file=sys.stderr,

@@ -68,3 +68,5 @@ libz/configure.log
 !mswin32/Makefile
 !zenmap/share/zenmap/locale/Makefile
 /mcp-nmap-server/.venv/
+/.venv-forktests/
+/.pytest_cache/

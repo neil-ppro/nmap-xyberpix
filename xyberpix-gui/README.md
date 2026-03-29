@@ -33,3 +33,16 @@ Override individual tools in **Settings** (gear on the welcome screen) if needed
 ## MCP server
 
 The **MCP** tab copies a sample Cursor MCP config and documents `pip install -e ./mcp-nmap-server` and safety env vars. The GUI does not replace your editor’s MCP wiring; it helps you configure it correctly.
+
+## Tests (repository root)
+
+**`argv_utils`** and **PySide6** page argv tests live under **`tests_fork/`** in the parent tree. From the repo root:
+
+```bash
+python3 -m pip install -U pip
+python3 -m pip install -r tests_fork/requirements-ci.txt
+QT_QPA_PLATFORM=offscreen python3 -m pytest tests_fork/ -q
+pip-audit -r tests_fork/requirements-ci.txt
+```
+
+Optional: `pip install -e ".[dev]"` here includes **pytest** for ad-hoc runs. See **`docs/FORK-MAINTENANCE.md`** and **`docs/security/OPERATORS.md`**.

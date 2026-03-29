@@ -29,6 +29,15 @@ jobs:
           .venv/bin/pip install -e ".[dev]"
           .venv/bin/python -m pytest tests/ -q --tb=short
 
+      - name: Fork Python tests + pip-audit (tests_fork/requirements-ci.txt)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python3 -m pip install -U pip
+          python3 -m pip install -r tests_fork/requirements-ci.txt
+          python3 -m pytest tests_fork/ -q --tb=short
+          pip-audit -r tests_fork/requirements-ci.txt
+
       - name: Zenmap / MCP / docs sync
         run: |
           python3 maint/check_zenmap_siem_flags.py
@@ -67,6 +76,16 @@ jobs:
           .venv/Scripts/pip install -e ".[dev]"
           .venv/Scripts/python -m pytest tests/ -q --tb=short
 
+      - name: Fork Python tests + pip-audit (Windows)
+        shell: bash
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python3 -m pip install -U pip
+          python3 -m pip install -r tests_fork/requirements-ci.txt
+          python3 -m pytest tests_fork/ -q --tb=short
+          pip-audit -r tests_fork/requirements-ci.txt
+
   build-nmap-ubuntu:
     runs-on: ubuntu-latest
     steps:
@@ -78,6 +97,11 @@ jobs:
           sudo apt-get install -y build-essential libpcap-dev libnet-dev libpcre2-dev
           ./configure
           make -j3
+
+      - name: Build nfuzz and smoke --version
+        run: |
+          make -j3 build-nfuzz
+          ./nfuzz/nfuzz --version
 
       - uses: actions/upload-artifact@v7
         with:
