@@ -60,6 +60,20 @@ HTML document (with embedded fuzzed JavaScript and stressed markup) on every
 request, so a browser pointed at the URL continuously exercises the DOM, HTML,
 and JS parsers (use only in an authorized lab).
 .PP
+The HTTP daemon locates the header/body delimiter without treating the request
+as a NUL\-terminated C string, so embedded NUL bytes cannot hide the end of
+headers.
+.B \-\-browser\-url
+(and the URL derived from
+.BR \-\-http\-bind )
+must not contain ASCII control bytes or DEL.
+.B \-\-hex\-file
+must name a regular file; on systems with
+.BR O_NOFOLLOW ,
+symlinks are not followed.
+.B \-\-pid\-file
+is written without following symbolic links where the OS supports that flag.
+.PP
 You must pass
 .B \-\-authorized
 or set
@@ -124,6 +138,9 @@ Double\-fork to the background and detach from the terminal (HTTP mode only).
 .BI \-\-pid\-file " PATH"
 Write the process ID after the server is listening (HTTP mode; useful with
 .BR \-\-detach ).
+Refuses to open through a symbolic link where
+.B O_NOFOLLOW
+is available.
 .TP
 .B \-\-auto\-browser
 Spawn a headless browser process that loads the fuzz URL (URL is passed as the
@@ -141,7 +158,7 @@ from the environment, or
 .BR chromium ).
 Must be a single
 .BR execvp (3)
-token: no ASCII control bytes or shell metacharacters
+token: no ASCII control bytes (including DEL) or shell metacharacters
 .RB ( ; | ` $ & ).
 .TP
 .BI \-\-browser\-preset " NAME"
@@ -178,6 +195,9 @@ When the bind address is
 the derived URL uses
 .B 127.0.0.1
 as the host unless overridden here.
+The URL must not contain ASCII control bytes or DEL (it is passed as one
+.BR execvp (3)
+argument).
 .TP
 .BI \-\-browser\-arg " ARG"
 Extra argument inserted before the URL (repeatable; maximum 32).
@@ -261,6 +281,9 @@ for free\-form hex files).
 .BI \-\-hex\-file " PATH"
 Read base datagram from a file; non\-hex characters are treated as whitespace
 and ignored.
+The path must refer to a regular file; on systems with
+.BR O_NOFOLLOW ,
+symlinks are not followed.
 .TP
 .BI \-\-pcap " PATH"
 Use the

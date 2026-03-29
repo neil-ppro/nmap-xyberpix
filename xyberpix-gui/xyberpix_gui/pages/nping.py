@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QRadioButton,
     QSpinBox,
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from xyberpix_gui.argv_utils import ArgvAssemblyError, extend_argv_from_fragment, validate_argv_list
 from xyberpix_gui.widgets import ProcessRunner
 
 
@@ -94,17 +96,21 @@ class NpingPage(QWidget):
         args: list[str] = [*self._mode_args(), "-c", str(self._count.value())]
         ex = self._extra.text().strip()
         if ex:
-            args.extend(shlex.split(ex))
+            extend_argv_from_fragment(args, ex, what="Nping extra")
         t = self._target.text().strip()
         if t:
             args.append(t)
+        validate_argv_list(args, what="nping arguments")
         return args
 
     def _copy_cmd(self) -> None:
         exe = self._resolve("nping") or "nping"
-        import shlex as sh
-
-        QApplication.clipboard().setText(sh.join([exe, *self._build_args()]))
+        try:
+            parts = self._build_args()
+        except ArgvAssemblyError as e:
+            QMessageBox.warning(self, "Nping command", e.message)
+            return
+        QApplication.clipboard().setText(shlex.join([exe, *parts]))
 
     def _run(self) -> None:
         exe = self._resolve("nping")
@@ -114,4 +120,9 @@ class NpingPage(QWidget):
         if not self._target.text().strip():
             self._runner.output.append_line("Error: enter target(s).")
             return
-        self._runner.start(exe, self._build_args())
+        try:
+            args = self._build_args()
+        except ArgvAssemblyError as e:
+            self._runner.output.append_line(f"Error: {e.message}")
+            return
+        self._runner.start(exe, args)

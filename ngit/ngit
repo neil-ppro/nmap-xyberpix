@@ -26,11 +26,23 @@ if sys.version_info < (3, 9):
     print("ngit: Python 3.9 or newer is required", file=sys.stderr)
     sys.exit(2)
 
-__version__ = "0.4"
+__version__ = "0.4.1"
 
 USER_AGENT = "ngit/{} (nmap-xyberpix; security research)".format(__version__)
 GITHUB_API = "https://api.github.com"
 MAX_FILE_BYTES = 512 * 1024
+# Cap API response size (memory / decompression DoS).
+MAX_HTTP_RESPONSE_BYTES = 10 * 1024 * 1024
+# User-supplied regex size (ReDoS / compile cost).
+MAX_EXTRA_REGEX_PATTERN_BYTES = 8192
+# GitHub search query length.
+MAX_SEARCH_QUERY_LEN = 512
+# Keyword from CLI or file (memory / pathological input).
+MAX_KEYWORD_LEN = 2048
+MAX_KEYWORD_FILE_LINES = 100_000
+# GitHub owner/name: ASCII only (API + --repo); rejects shell metacharacters / odd URLs.
+_MAX_SLUG_SEGMENT_LEN = 200
+_SLUG_SEGMENT_RE = re.compile(r"^[A-Za-z0-9._-]{1,%d}$" % _MAX_SLUG_SEGMENT_LEN)
 SKIP_DIR_NAMES = frozenset(
     {".git", "node_modules", "vendor", ".venv", "venv", "__pycache__", "dist", "build"}
 )
@@ -261,6 +273,57 @@ def get_ssl_context() -> ssl.SSLContext:
     return _ssl_ctx
 
 
+def github_full_name_allowed(full_name: str) -> bool:
+    """Reject malformed slugs before building clone URLs (injection / odd git behavior)."""
+    if full_name.count("/") != 1:
+        return False
+    owner, repo = full_name.split("/", 1)
+    if not owner or not repo:
+        return False
+    if len(owner) > _MAX_SLUG_SEGMENT_LEN or len(repo) > _MAX_SLUG_SEGMENT_LEN:
+        return False
+
+    def segment_ok(seg: str) -> bool:
+        if seg in (".", ".."):
+            return False
+        return bool(_SLUG_SEGMENT_RE.match(seg))
+
+    return segment_ok(owner) and segment_ok(repo)
+
+
+def sanitize_finding_field(s: str) -> str:
+    """Avoid newline/control-char injection in finding header lines (log/SIEM parsers)."""
+    return (
+        s.replace("\r\n", " ")
+        .replace("\n", " ")
+        .replace("\r", " ")
+        .replace("\x00", " ")
+    )
+
+
+def validate_github_token_for_transport(token: str | None) -> str | None:
+    """
+    Token is passed in HTTP Authorization and git -c http.extraHeader; reject
+    control characters and pathological lengths (header injection).
+    """
+    if token is None:
+        return None
+    t = token.strip()
+    if not t:
+        return None
+    if len(t) > 4000:
+        print("ngit: token exceeds maximum length (4000)", file=sys.stderr)
+        sys.exit(2)
+    for ch in t:
+        if ord(ch) < 32 or ch == "\x7f":
+            print(
+                "ngit: token contains disallowed control characters",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+    return t
+
+
 def mask_token(s: str, keep: int = 4) -> str:
     s = s.strip()
     if len(s) <= 2 * keep:
@@ -305,10 +368,28 @@ def load_keyword_file_paths(paths: list[str]) -> list[str]:
     out: list[str] = []
     for path in paths:
         try:
+            nlines = 0
             with open(path, "r", encoding="utf-8", errors="replace") as f:
                 for line in f:
+                    nlines += 1
+                    if nlines > MAX_KEYWORD_FILE_LINES:
+                        print(
+                            "ngit: --keyword-file {} exceeds {} lines".format(
+                                path, MAX_KEYWORD_FILE_LINES
+                            ),
+                            file=sys.stderr,
+                        )
+                        sys.exit(2)
                     s = line.strip()
                     if s and not s.startswith("#"):
+                        if len(s) > MAX_KEYWORD_LEN:
+                            print(
+                                "ngit: keyword line too long in {} (max {} chars)".format(
+                                    path, MAX_KEYWORD_LEN
+                                ),
+                                file=sys.stderr,
+                            )
+                            sys.exit(2)
                         out.append(s.lower())
         except OSError as e:
             print("ngit: cannot read --keyword-file {}: {}".format(path, e), file=sys.stderr)
@@ -326,9 +407,12 @@ def emit_finding(
 ) -> None:
     """Print one finding immediately (flushed) for live monitoring."""
     val = format_secret_value(raw_value, redact)
-    print("repository: {}".format(repo), flush=True)
-    print("location: {}:{}".format(rel_path, lineno), flush=True)
-    print("type: {}".format(finding_type), flush=True)
+    repo_s = sanitize_finding_field(repo)
+    loc_s = sanitize_finding_field(rel_path)
+    type_s = sanitize_finding_field(finding_type)
+    print("repository: {}".format(repo_s), flush=True)
+    print("location: {}:{}".format(loc_s, lineno), flush=True)
+    print("type: {}".format(type_s), flush=True)
     print("value:", flush=True)
     print(val, flush=True)
     print("---", flush=True)
@@ -398,10 +482,13 @@ def scan_single_file(
     keyword_scan_only: bool,
 ) -> int:
     try:
+        if os.path.islink(full_path):
+            return 0
         st = os.stat(full_path)
         if st.st_size > MAX_FILE_BYTES:
             return 0
-        raw = open(full_path, "rb").read()
+        with open(full_path, "rb") as bf:
+            raw = bf.read()
     except OSError:
         return 0
     if is_probably_binary(raw[:8192]):
@@ -481,7 +568,12 @@ def http_json(
     req = urllib.request.Request(url, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=60, context=get_ssl_context()) as resp:
-            body = resp.read().decode("utf-8", errors="replace")
+            body_b = resp.read(MAX_HTTP_RESPONSE_BYTES + 1)
+            if len(body_b) > MAX_HTTP_RESPONSE_BYTES:
+                raise urllib.error.URLError(
+                    "HTTP response exceeds {} bytes".format(MAX_HTTP_RESPONSE_BYTES)
+                )
+            body = body_b.decode("utf-8", errors="replace")
             hdrs = {k.lower(): v for k, v in resp.headers.items()}
             return json.loads(body), hdrs
     except urllib.error.HTTPError as e:
@@ -553,11 +645,21 @@ def iter_repo_slugs_for_scan(
             items, _, _ = fetch_search_repos(search_query, p, per_page, token, verbose)
             for it in items:
                 fn = it.get("full_name")
-                if isinstance(fn, str) and fn not in wanted:
-                    wanted.add(fn)
-                    yield fn
-                    if len(wanted) >= count:
-                        return
+                if not isinstance(fn, str) or fn in wanted:
+                    continue
+                if not github_full_name_allowed(fn):
+                    if verbose:
+                        print(
+                            "ngit: skipping invalid repository slug from API {!r}".format(
+                                fn
+                            ),
+                            file=sys.stderr,
+                        )
+                    continue
+                wanted.add(fn)
+                yield fn
+                if len(wanted) >= count:
+                    return
         return
 
     page = 1
@@ -573,9 +675,14 @@ def iter_repo_slugs_for_scan(
             break
         for it in items:
             fn = it.get("full_name")
-            if isinstance(fn, str):
+            if isinstance(fn, str) and github_full_name_allowed(fn):
                 yield fn
                 seen += 1
+            elif isinstance(fn, str) and verbose:
+                print(
+                    "ngit: skipping invalid repository slug from API {!r}".format(fn),
+                    file=sys.stderr,
+                )
                 if seen >= count:
                     return
         page += 1
@@ -592,6 +699,8 @@ def is_probably_binary(sample: bytes) -> bool:
 def should_skip_path(rel: str) -> bool:
     parts = rel.replace("\\", "/").split("/")
     for p in parts:
+        if p == "..":
+            return True
         if p in SKIP_DIR_NAMES:
             return True
     low = rel.lower()
@@ -602,6 +711,13 @@ def should_skip_path(rel: str) -> bool:
 
 
 def clone_repo(full_name: str, dest: str, token: str | None, verbose: bool) -> bool:
+    if not github_full_name_allowed(full_name):
+        if verbose:
+            print(
+                "ngit: refusing clone of invalid repository slug {!r}".format(full_name),
+                file=sys.stderr,
+            )
+        return False
     url = "https://github.com/{}.git".format(full_name)
     cmd: list[str] = ["git"]
     if token:
@@ -674,6 +790,14 @@ def parse_extra_regex_args(items: list[str] | None) -> list[tuple[str, re.Patter
             print(
                 "ngit: --extra-regex label must be [A-Za-z_][A-Za-z0-9_]{0,62}: {!r}".format(
                     label
+                ),
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        if len(pat.encode("utf-8")) > MAX_EXTRA_REGEX_PATTERN_BYTES:
+            print(
+                "ngit: --extra-regex pattern for {!r} exceeds {} bytes".format(
+                    label, MAX_EXTRA_REGEX_PATTERN_BYTES
                 ),
                 file=sys.stderr,
             )
@@ -811,6 +935,21 @@ def main(argv: list[str] | None = None) -> int:
 
     init_ssl(args.insecure)
 
+    if len(args.search_query) > MAX_SEARCH_QUERY_LEN:
+        print(
+            "ngit: --search-query exceeds maximum length ({})".format(MAX_SEARCH_QUERY_LEN),
+            file=sys.stderr,
+        )
+        return 2
+
+    for kw in args.keyword:
+        if len(kw) > MAX_KEYWORD_LEN:
+            print(
+                "ngit: --keyword exceeds maximum length ({})".format(MAX_KEYWORD_LEN),
+                file=sys.stderr,
+            )
+            return 2
+
     extra_rules = parse_extra_regex_args(args.extra_regex)
     all_line_rules: list[tuple[str, re.Pattern[str]]] = list(RULES) + extra_rules
 
@@ -858,18 +997,20 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
 
-    token = args.token or os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    token = validate_github_token_for_transport(
+        args.token or os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    )
 
     if args.repo:
         if args.scan_count:
             print("ngit: --scan-count is ignored when --repo is set", file=sys.stderr)
         fn = args.repo.strip()
-        if fn.count("/") != 1:
-            print("ngit: --repo must be OWNER/NAME", file=sys.stderr)
-            return 2
-        owner, name = fn.split("/", 1)
-        if not owner or not name or "/" in name:
-            print("ngit: invalid --repo", file=sys.stderr)
+        if not github_full_name_allowed(fn):
+            print(
+                "ngit: --repo must be OWNER/NAME (one slash; letters, digits, ._- only; "
+                "not . or .. as a segment)",
+                file=sys.stderr,
+            )
             return 2
         n = scan_one_repo(
             fn,

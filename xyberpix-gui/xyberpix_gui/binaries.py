@@ -19,6 +19,8 @@ def find_repo_root() -> Path | None:
     """Return nmap-xyberpix tree root (mcp-nmap-server/ + nmap dir or binary), or None."""
     env = os.environ.get("NMAP_XYBERPIX_ROOT", "").strip()
     if env:
+        if "\x00" in env:
+            return None
         p = Path(env).expanduser().resolve()
         return p if p.is_dir() else None
     here = Path(__file__).resolve().parent
@@ -59,7 +61,10 @@ def _candidates(name: str) -> list[Path]:
 
 def resolve_binary(tool: str, override: str | None) -> str | None:
     if override and override.strip():
-        p = Path(override.strip()).expanduser()
+        o = override.strip()
+        if "\x00" in o:
+            return None
+        p = Path(o).expanduser()
         if p.is_file() and os.access(p, os.X_OK):
             return str(p)
         w = shutil.which(str(p))

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QProcess, Signal
+
+from xyberpix_gui.argv_utils import argv_preview, validate_argv_list, ArgvAssemblyError
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -93,10 +95,18 @@ class ProcessRunner(QWidget):
     def start(self, program: str, args: list[str], cwd: str | None = None) -> bool:
         if self._proc.state() != QProcess.NotRunning:
             return False
+        if not program or "\x00" in program:
+            self._status.setText("Invalid program path.")
+            return False
+        try:
+            validate_argv_list(args, what="program arguments")
+        except ArgvAssemblyError as e:
+            self._status.setText(e.message)
+            return False
         self.output.clear()
         self._btn_run.setEnabled(False)
         self._btn_stop.setEnabled(True)
-        self._status.setText(f"Running: {program} {' '.join(args)}")
+        self._status.setText(f"Running: {argv_preview(program, args)}")
         self._proc.setProgram(program)
         self._proc.setArguments(args)
         if cwd:

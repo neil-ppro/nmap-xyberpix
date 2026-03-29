@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QTabWidget,
@@ -18,6 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from xyberpix_gui.argv_utils import ArgvAssemblyError, extend_argv_from_fragment, validate_argv_list
 from xyberpix_gui.widgets import ProcessRunner
 
 
@@ -84,28 +86,39 @@ class NcatPage(QWidget):
             args = ["-l", str(self._l_port.value())]
             ex = self._l_extra.text().strip()
             if ex:
-                args.extend(shlex.split(ex))
+                extend_argv_from_fragment(args, ex, what="Ncat listen extra")
+            validate_argv_list(args, what="ncat arguments")
             return args
         args: list[str] = []
         ex = self._c_extra.text().strip()
         if ex:
-            args.extend(shlex.split(ex))
+            extend_argv_from_fragment(args, ex, what="Ncat connect extra")
         host = self._c_host.text().strip()
         port = str(self._c_port.value())
         if host:
             args.extend([host, port])
+        validate_argv_list(args, what="ncat arguments")
         return args
 
     def _copy_cmd(self) -> None:
         exe = self._resolve("ncat") or "ncat"
-        QApplication.clipboard().setText(shlex.join([exe, *self._build_args()]))
+        try:
+            parts = self._build_args()
+        except ArgvAssemblyError as e:
+            QMessageBox.warning(self, "Ncat command", e.message)
+            return
+        QApplication.clipboard().setText(shlex.join([exe, *parts]))
 
     def _run(self) -> None:
         exe = self._resolve("ncat")
         if not exe:
             self._runner.output.append_line("Error: ncat not found.")
             return
-        args = self._build_args()
+        try:
+            args = self._build_args()
+        except ArgvAssemblyError as e:
+            self._runner.output.append_line(f"Error: {e.message}")
+            return
         if self._tabs.currentIndex() == 1 and not self._c_host.text().strip():
             self._runner.output.append_line("Error: enter host for connect mode.")
             return

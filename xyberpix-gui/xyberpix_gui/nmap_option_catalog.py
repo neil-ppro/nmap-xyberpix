@@ -412,8 +412,8 @@ COMBO_SPECS: tuple[NmapComboSpec, ...] = (
 )
 
 
-# Line edits: key -> (label, flag, takes_value)
-# If flag empty, value is appended as raw tokens via shlex (user responsibility).
+# Line edits: key -> (label, flag, takes_value, placeholder).
+# "extra" and "targets" use argv_utils (POSIX shlex, bounded); other keys are one argv token per field.
 LINE_SPECS: tuple[tuple[str, str, str, str], ...] = (
     ("targets", "Targets (hosts / CIDR / ranges)", "", "scanme.nmap.org or 192.168.1.0/24"),
     ("ports", "Port list (-p)", "-p", "22,80,443 or 1-1024 or U:53,T:80"),

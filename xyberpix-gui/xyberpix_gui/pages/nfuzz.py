@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QTabWidget,
@@ -18,6 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from xyberpix_gui.argv_utils import ArgvAssemblyError, extend_argv_from_fragment, validate_argv_list
 from xyberpix_gui.widgets import ProcessRunner
 
 
@@ -53,7 +55,9 @@ class NfuzzPage(QWidget):
         self._sport.setValue(0)
         self._sport.setSpecialValueText("auto")
         self._raw_extra = QLineEdit()
-        self._raw_extra.setPlaceholderText("e.g. --template icmp-echo --payload-len 64")
+        self._raw_extra.setPlaceholderText(
+            "e.g. --template icmp-echo --payload-len 64 (split with shlex; no shell)"
+        )
         rf = QFormLayout(raw)
         rf.addRow("Template / mode", self._tpl)
         rf.addRow("Destination host", self._host)
@@ -66,7 +70,7 @@ class NfuzzPage(QWidget):
         self._http_url = QLineEdit()
         self._http_url.setPlaceholderText("http://127.0.0.1:8080/")
         self._http_extra = QLineEdit()
-        self._http_extra.setPlaceholderText("Daemon / browser flags per nfuzz(1)")
+        self._http_extra.setPlaceholderText("Daemon / browser flags (shlex-split; QProcess, no shell)")
         hf = QFormLayout(http)
         hf.addRow("Base URL (if applicable)", self._http_url)
         hf.addRow("Extra", self._http_extra)
@@ -99,7 +103,7 @@ class NfuzzPage(QWidget):
             args: list[str] = []
             ex = self._raw_extra.text().strip()
             if ex:
-                args.extend(shlex.split(ex))
+                extend_argv_from_fragment(args, ex, what="nfuzz extra args")
             else:
                 tpl = self._tpl.currentText().strip()
                 if tpl:
@@ -110,23 +114,34 @@ class NfuzzPage(QWidget):
                 args.extend(["--dport", str(self._dport.value())])
                 if self._sport.value() > 0:
                     args.extend(["--sport", str(self._sport.value())])
+            validate_argv_list(args, what="nfuzz arguments")
             return args
         args = []
         ex = self._http_extra.text().strip()
         if ex:
-            args.extend(shlex.split(ex))
+            extend_argv_from_fragment(args, ex, what="nfuzz HTTP extra")
+        validate_argv_list(args, what="nfuzz arguments")
         return args
 
     def _copy_cmd(self) -> None:
         exe = self._resolve("nfuzz") or "nfuzz"
-        QApplication.clipboard().setText(shlex.join([exe, *self._build_args()]))
+        try:
+            parts = self._build_args()
+        except ArgvAssemblyError as e:
+            QMessageBox.warning(self, "nfuzz command", e.message)
+            return
+        QApplication.clipboard().setText(shlex.join([exe, *parts]))
 
     def _run(self) -> None:
         exe = self._resolve("nfuzz")
         if not exe:
             self._runner.output.append_line("Error: nfuzz not found (build with make build-nfuzz).")
             return
-        args = self._build_args()
+        try:
+            args = self._build_args()
+        except ArgvAssemblyError as e:
+            self._runner.output.append_line(f"Error: {e.message}")
+            return
         if self._tabs.currentIndex() == 0 and not args:
             self._runner.output.append_line("Error: add extra args or fill host/template.")
             return

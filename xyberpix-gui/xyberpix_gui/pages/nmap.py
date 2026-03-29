@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from xyberpix_gui.argv_utils import ArgvAssemblyError, extend_argv_from_fragment, validate_argv_list
 from xyberpix_gui.nmap_option_catalog import COMBO_SPECS, LINE_SPECS
 from xyberpix_gui.nmap_profile_store import delete_profile, get_profile, list_names, put_profile
 from xyberpix_gui.widgets import ProcessRunner
@@ -269,7 +270,7 @@ class NmapPage(QWidget):
 
         extra = self._lines["extra"].text().strip()
         if extra:
-            args.extend(shlex.split(extra))
+            extend_argv_from_fragment(args, extra, what="Extra nmap flags")
 
         return args
 
@@ -279,13 +280,18 @@ class NmapPage(QWidget):
         args.extend(self._argv_from_lines())
         targets = self._lines["targets"].text().strip()
         if targets:
-            args.extend(shlex.split(targets))
+            extend_argv_from_fragment(args, targets, what="Targets")
+        validate_argv_list(args, what="nmap arguments")
         return args
 
     def _copy_cmd(self) -> None:
         exe = self._resolve("nmap") or "nmap"
-        line = shlex.join([exe, *self._build_args()])
-        QApplication.clipboard().setText(line)
+        try:
+            parts = self._build_args()
+        except ArgvAssemblyError as e:
+            QMessageBox.warning(self, "Nmap command", e.message)
+            return
+        QApplication.clipboard().setText(shlex.join([exe, *parts]))
 
     def _run(self) -> None:
         exe = self._resolve("nmap")
@@ -297,5 +303,9 @@ class NmapPage(QWidget):
             if not self._lines["input_list"].text().strip() and not self._lines["random_targets"].text().strip():
                 self._runner.output.append_line("Error: enter targets, or set Input list (-iL) / Random targets (-iR).")
                 return
-        args = self._build_args()
+        try:
+            args = self._build_args()
+        except ArgvAssemblyError as e:
+            self._runner.output.append_line(f"Error: {e.message}")
+            return
         self._runner.start(exe, args)

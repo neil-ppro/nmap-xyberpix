@@ -355,14 +355,28 @@ static int build_http_fuzz_page(char *body, size_t cap, size_t *out_len,
 
 static int write_pid_file(const char *path)
 {
-  FILE *f = fopen(path, "w");
-  if (!f) {
+#ifdef O_NOFOLLOW
+  int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0644);
+#else
+  int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+#endif
+  if (fd < 0) {
     fprintf(stderr, "nfuzz: cannot write pid file %s: %s\n", path,
         strerror(errno));
     return -1;
   }
-  fprintf(f, "%ld\n", (long)getpid());
-  fclose(f);
+  char line[64];
+  int ln = snprintf(line, sizeof(line), "%ld\n", (long)getpid());
+  if (ln < 0 || (size_t)ln >= sizeof(line)) {
+    close(fd);
+    return -1;
+  }
+  if (write(fd, line, (size_t)ln) != (ssize_t)ln) {
+    fprintf(stderr, "nfuzz: write pid file %s: %s\n", path, strerror(errno));
+    close(fd);
+    return -1;
+  }
+  close(fd);
   return 0;
 }
 
@@ -416,6 +430,31 @@ static int parse_bind(const char *bind, char *host_out, size_t host_sz,
   return 0;
 }
 
+/* "\r\n\r\n" in a byte range (HTTP end-of-headers); not NUL-terminated. */
+static size_t nfuzz_http_header_end(const char *buf, size_t len)
+{
+  if (len < 4)
+    return (size_t)-1;
+  for (size_t i = 0; i + 3 < len; i++) {
+    if (buf[i] == '\r' && buf[i + 1] == '\n' && buf[i + 2] == '\r'
+        && buf[i + 3] == '\n')
+      return i + 4;
+  }
+  return (size_t)-1;
+}
+
+/* Browser URL is passed to execvp; reject NUL/control bytes and DEL. */
+static int nfuzz_browser_url_safe(const char *s)
+{
+  if (s == NULL || *s == '\0')
+    return -1;
+  for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+    if (*p < 0x20u || *p == 0x7fu)
+      return -1;
+  }
+  return 0;
+}
+
 static volatile sig_atomic_t nfuzz_http_stop;
 
 static void nfuzz_http_sig(int s)
@@ -429,6 +468,8 @@ static int build_browser_url(char *out, size_t osz, const char *bind_ip,
 {
   const char *host = bind_ip;
   if (override != NULL && override[0] != '\0') {
+    if (nfuzz_browser_url_safe(override) != 0)
+      return -1;
     size_t olen = strlen(override);
     if (olen >= osz)
       return -1;
@@ -440,6 +481,8 @@ static int build_browser_url(char *out, size_t osz, const char *bind_ip,
     host = "127.0.0.1";
   int n = snprintf(out, osz, "http://%s:%u/", host, (unsigned)port);
   if (n < 0 || (size_t)n >= osz)
+    return -1;
+  if (nfuzz_browser_url_safe(out) != 0)
     return -1;
   return 0;
 }
@@ -541,7 +584,7 @@ static int nfuzz_browser_argv_token_safe(const char *s)
   if (s == NULL || *s == '\0')
     return -1;
   for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
-    if (*p < 0x20u)
+    if (*p < 0x20u || *p == 0x7fu)
       return -1;
     switch ((char)*p) {
     case ';':
@@ -684,7 +727,9 @@ static int run_http_daemon(const char *bind_spec, size_t max_body,
   if (brw != NULL && brw->auto_browser) {
     if (build_browser_url(browser_url, sizeof(browser_url), host, port,
           brw->browser_url_override) != 0) {
-      fprintf(stderr, "nfuzz: browser URL too long or invalid\n");
+      fprintf(stderr,
+          "nfuzz: browser URL invalid (too long, control characters, or bad "
+          "--browser-url)\n");
       free(body);
       close(ls);
       return 2;
@@ -707,7 +752,7 @@ static int run_http_daemon(const char *bind_spec, size_t max_body,
     if (nfuzz_browser_argv_token_safe(browser_cmd_resolved) != 0) {
       fprintf(stderr,
           "nfuzz: --browser-cmd / NFUZZ_BROWSER_CMD must be one executable token "
-          "without shell metacharacters (|;`$&) or control bytes\n");
+          "without shell metacharacters (|;`$&) or ASCII control bytes (incl. DEL)\n");
       free(body);
       close(ls);
       return 2;
@@ -716,7 +761,7 @@ static int run_http_daemon(const char *bind_spec, size_t max_body,
       if (nfuzz_browser_argv_token_safe(brw->browser_extra[bi]) != 0) {
         fprintf(stderr,
             "nfuzz: each --browser-arg must be a single token without "
-            ";|`$& or control bytes\n");
+            ";|`$& or ASCII control bytes (incl. DEL)\n");
         free(body);
         close(ls);
         return 2;
@@ -789,8 +834,7 @@ static int run_http_daemon(const char *bind_spec, size_t max_body,
       if (n <= 0)
         break;
       total += n;
-      req[total] = '\0';
-      if (strstr(req, "\r\n\r\n") != NULL)
+      if (nfuzz_http_header_end(req, (size_t)total) != (size_t)-1)
         break;
     }
 
@@ -941,7 +985,7 @@ static void usage(FILE *fp, const char *argv0)
 
 static const char *version_string(void)
 {
-  return "nfuzz (nmap-xyberpix) 0.7";
+  return "nfuzz (nmap-xyberpix) 0.7.1";
 }
 
 static int xtoi(int c)
@@ -983,31 +1027,45 @@ static int decode_hex_buffer(const char *text, size_t tlen, unsigned char *out, 
 
 static int read_hex_file(const char *path, unsigned char *out, int outmax)
 {
-  FILE *f = fopen(path, "rb");
-  if (!f) {
+#ifdef O_NOFOLLOW
+  int fd = open(path, O_RDONLY | O_NOFOLLOW);
+#else
+  int fd = open(path, O_RDONLY);
+#endif
+  if (fd < 0) {
     fprintf(stderr, "nfuzz: cannot open %s: %s\n", path, strerror(errno));
     return -1;
   }
-  char *buf = NULL;
-  if (fseek(f, 0, SEEK_END) != 0) {
-    fclose(f);
-    fprintf(stderr, "nfuzz: fseek failed on %s\n", path);
+  struct stat st;
+  if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode)) {
+    fprintf(stderr, "nfuzz: %s must be a regular file\n", path);
+    close(fd);
     return -1;
   }
-  long sz = ftell(f);
-  if (sz < 0 || sz > NFUZZ_MAX_PACKET * 4) {
-    fclose(f);
+  off_t szo = st.st_size;
+  if (szo < 0 || szo > (off_t)(NFUZZ_MAX_PACKET * 4)) {
     fprintf(stderr, "nfuzz: file too large or unreadable: %s\n", path);
+    close(fd);
     return -1;
   }
-  rewind(f);
-  buf = (char *)malloc((size_t)sz + 1);
+  size_t sz = (size_t)szo;
+  char *buf = (char *)malloc(sz + 1);
   if (!buf) {
-    fclose(f);
+    close(fd);
     return -1;
   }
-  size_t r = fread(buf, 1, (size_t)sz, f);
-  fclose(f);
+  size_t r = 0;
+  while (r < sz) {
+    ssize_t n = read(fd, buf + r, sz - r);
+    if (n <= 0) {
+      fprintf(stderr, "nfuzz: read error on %s\n", path);
+      free(buf);
+      close(fd);
+      return -1;
+    }
+    r += (size_t)n;
+  }
+  close(fd);
   buf[r] = '\0';
   int len = decode_hex_buffer(buf, r, out, outmax);
   free(buf);

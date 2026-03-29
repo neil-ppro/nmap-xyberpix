@@ -51,7 +51,7 @@ class McpPage(QWidget):
         self._nmap_path = QLineEdit()
         self._nmap_path.setPlaceholderText("Override Nmap binary if needed")
         self._data_dir = QLineEdit()
-        self._data_dir.setPlaceholderText("NMAP_MCP_DATA_DIR")
+        self._data_dir.setPlaceholderText("NMAP_MCP_DATADIR")
         ef.addRow("Nmap path hint", self._nmap_path)
         ef.addRow("Data dir", self._data_dir)
         self._nmap_path.textChanged.connect(self._refresh_json)
@@ -100,10 +100,10 @@ class McpPage(QWidget):
         env: dict[str, str] = {}
         np = self._nmap_path.text().strip()
         if np:
-            env["NMAP_PATH"] = np
+            env["NMAP_MCP_BINARY"] = np
         dd = self._data_dir.text().strip()
         if dd:
-            env["NMAP_MCP_DATA_DIR"] = dd
+            env["NMAP_MCP_DATADIR"] = dd
         return {
             "mcpServers": {
                 "nmap": {
