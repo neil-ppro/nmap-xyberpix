@@ -5,25 +5,63 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
+import threading
 from typing import Any
 
 _ENV_POLICY = "NMAP_MCP_POLICY_FILE"
+# Cap file size to limit memory/CPU (json.load on multi-megabyte policy).
+_MAX_POLICY_FILE_BYTES = 256 * 1024
+
+_policy_lock = threading.Lock()
+# (path, mtime_ns, parsed_dict) — invalidated on path change or mtime change.
+_policy_cache: tuple[str, int, dict[str, Any]] | None = None
+
+
+def _policy_mtime_ns(path: str) -> int:
+    st = os.stat(path)
+    ns = getattr(st, "st_mtime_ns", None)
+    if ns is not None:
+        return int(ns)
+    return int(st.st_mtime * 1_000_000_000)
+
+
+def _read_policy_file_limited(path: str) -> bytes:
+    with open(path, "rb") as f:
+        raw = f.read(_MAX_POLICY_FILE_BYTES + 1)
+    if len(raw) > _MAX_POLICY_FILE_BYTES:
+        raise RuntimeError(
+            f"{_ENV_POLICY}: file exceeds {_MAX_POLICY_FILE_BYTES} bytes ({path!r})."
+        )
+    return raw
 
 
 def load_mcp_policy() -> dict[str, Any]:
+    global _policy_cache
     path = os.environ.get(_ENV_POLICY, "").strip()
     if not path or "\x00" in path or len(path) > 4096:
+        with _policy_lock:
+            _policy_cache = None
         return {}
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except OSError as e:
-        raise RuntimeError(f"{_ENV_POLICY}: cannot read: {e}") from e
-    except json.JSONDecodeError as e:
-        raise RuntimeError(f"{_ENV_POLICY}: invalid JSON: {e}") from e
-    if not isinstance(data, dict):
-        raise RuntimeError(f"{_ENV_POLICY}: root must be a JSON object")
-    return data
+    with _policy_lock:
+        try:
+            mtime_ns = _policy_mtime_ns(path)
+        except OSError as e:
+            raise RuntimeError(f"{_ENV_POLICY}: cannot stat: {e}") from e
+        if _policy_cache is not None:
+            cpath, cms, cdata = _policy_cache
+            if cpath == path and cms == mtime_ns:
+                return dict(cdata)
+        try:
+            raw = _read_policy_file_limited(path)
+            data = json.loads(raw.decode("utf-8"))
+        except OSError as e:
+            raise RuntimeError(f"{_ENV_POLICY}: cannot read: {e}") from e
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"{_ENV_POLICY}: invalid JSON: {e}") from e
+        if not isinstance(data, dict):
+            raise RuntimeError(f"{_ENV_POLICY}: root must be a JSON object")
+        _policy_cache = (path, mtime_ns, data)
+        return dict(data)
 
 
 def policy_scan_options_error(scan_options: list[str], policy: dict[str, Any]) -> str | None:
@@ -66,11 +104,17 @@ def policy_targets_error(targets: list[str], policy: dict[str, Any]) -> str | No
                 return f"policy has invalid CIDR {c!r} ({_ENV_POLICY})."
     hosts_ok: set[str] = set()
     if isinstance(hostset_raw, list) and hostset_raw:
-        hosts_ok = {str(x) for x in hostset_raw if isinstance(x, str)}
+        # DNS hostnames are case-insensitive; normalize so policy matches reliably.
+        hosts_ok = {
+            str(x).strip().lower().rstrip(".")
+            for x in hostset_raw
+            if isinstance(x, str) and str(x).strip()
+        }
     if not nets and not hosts_ok:
         return None
     for t in targets:
-        if t in hosts_ok:
+        tnorm = t.strip().lower().rstrip(".")
+        if tnorm in hosts_ok:
             continue
         if nets:
             ip_part = t.split("%", 1)[0].strip()
@@ -83,7 +127,7 @@ def policy_targets_error(targets: list[str], policy: dict[str, Any]) -> str | No
                 )
             if not any(ip_obj in net for net in nets):
                 return f"policy: target {t!r} not in allowed_target_cidrs ({_ENV_POLICY})."
-        elif hosts_ok and t not in hosts_ok:
+        elif hosts_ok and tnorm not in hosts_ok:
             return f"policy: target {t!r} not in allowed_hostnames ({_ENV_POLICY})."
     return None
 

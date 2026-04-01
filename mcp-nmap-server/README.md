@@ -88,8 +88,8 @@ warnings.
 
 ### Optional policy file + audit log
 
-- **`NMAP_MCP_POLICY_FILE`**: JSON with extra allowlists (`allowed_target_cidrs`, `allowed_hostnames`), `max_targets`, `max_timeout_seconds`, and `disallowed_scan_option_prefixes` / `disallowed_scan_options_exact` (applied even when `NMAP_MCP_ALLOW_UNSAFE_CLI=1`). See [`docs/MCP-POLICY-FILE.md`](../docs/MCP-POLICY-FILE.md).
-- **`NMAP_MCP_AUDIT_LOG`**: append NDJSON lines recording validated `argv` for dry runs and execution results for `nmap_run_scan` / offsec run tools.
+- **`NMAP_MCP_POLICY_FILE`**: JSON with extra allowlists (`allowed_target_cidrs`, `allowed_hostnames`), `max_targets`, `max_timeout_seconds`, and `disallowed_scan_option_prefixes` / `disallowed_scan_options_exact` (applied even when `NMAP_MCP_ALLOW_UNSAFE_CLI=1`). Max file size **256 KiB**; content cached by path + mtime. See [`docs/MCP-POLICY-FILE.md`](../docs/MCP-POLICY-FILE.md).
+- **`NMAP_MCP_AUDIT_LOG`**: append NDJSON lines recording validated `argv` for dry runs and execution results for `nmap_run_scan` / offsec run tools. Records are **truncated** so each line stays bounded (large argv / error strings).
 
 ## Tools
 

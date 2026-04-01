@@ -1,6 +1,6 @@
 # MCP policy file (`NMAP_MCP_POLICY_FILE`)
 
-Optional JSON file loaded by **nmap-mcp-server** on each tool invocation that touches scan argv or targets. It **adds** constraints on top of the built-in MCP safe mode and `network_scope`.
+Optional JSON file loaded by **nmap-mcp-server** on each tool invocation that touches scan argv or targets. It **adds** constraints on top of the built-in MCP safe mode and `network_scope`. The file is read with a **256 KiB** size cap; larger files are rejected. Parsed policy is cached while the path and modification time are unchanged.
 
 ## Environment
 
@@ -18,7 +18,7 @@ Invalid JSON or a non-object root causes tool calls to fail with an error mentio
 | `disallowed_scan_option_prefixes` | string[] | Reject any `scan_options` token equal to or starting with one of these strings (applies even when `NMAP_MCP_ALLOW_UNSAFE_CLI=1`). |
 | `disallowed_scan_options_exact` | string[] | Reject exact token matches. |
 | `allowed_target_cidrs` | string[] | If non-empty, every target must be a literal IP (no hostnames) contained in one of these CIDRs (e.g. `10.0.0.0/8`). |
-| `allowed_hostnames` | string[] | If `allowed_target_cidrs` is empty but this is non-empty, targets must be exactly one of these strings. If both lists are empty/absent, no extra target restriction from the file. |
+| `allowed_hostnames` | string[] | If `allowed_target_cidrs` is empty but this is non-empty, targets must match one of these hostnames after **case-insensitive** comparison and ignoring a trailing dot (DNS rules). If both lists are empty/absent, no extra target restriction from the file. |
 | `max_targets` | integer | Maximum number of targets per call (≥ 1). |
 | `max_timeout_seconds` | integer | Cap `timeout_seconds` for `nmap_run_scan` / `nmap_offsec_run_scan`. |
 
@@ -42,4 +42,6 @@ Typical `event` values:
 - `mcp_nmap_run_scan_finished` — `returncode` and success flag.
 - `mcp_nmap_offsec_dry_run`, `mcp_nmap_offsec_run_scan`, `mcp_nmap_offsec_run_scan_finished` — same for offsec presets.
 
-Lines are newline-delimited JSON with a UTC `ts` field.
+Lines are newline-delimited JSON with a UTC `ts` field. Very long string fields (e.g. errors) and long lists are **truncated** before write so a single log line cannot exceed **256 KiB** (defense against log/memory abuse).
+
+**Offsec tools** (`nmap_offsec_dry_run`, `nmap_offsec_run_scan`) append `phase: "scope"` audit lines when `network_scope` checks fail, matching the main `nmap_run_scan` path.

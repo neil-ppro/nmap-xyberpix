@@ -8,6 +8,8 @@ import shlex
 MAX_USER_FRAGMENT_BYTES = 128 * 1024
 MAX_TOKENS_PER_FRAGMENT = 512
 MAX_TOKEN_BYTES = 64 * 1024
+# Defense in depth: QProcess argv length (GUI can split many targets into tokens).
+MAX_ARGV_ITEMS = 1024
 
 
 class ArgvAssemblyError(ValueError):
@@ -57,7 +59,11 @@ def extend_argv_from_fragment(dest: list[str], fragment: str, *, what: str) -> N
 
 
 def validate_argv_list(argv: list[str], *, what: str = "arguments") -> None:
-    """Defense in depth before QProcess: no NUL, bounded token size."""
+    """Defense in depth before QProcess: no NUL, bounded token size and count."""
+    if len(argv) > MAX_ARGV_ITEMS:
+        raise ArgvAssemblyError(
+            f"{what}: too many arguments ({len(argv)}; max {MAX_ARGV_ITEMS})."
+        )
     for i, a in enumerate(argv):
         if "\x00" in a:
             raise ArgvAssemblyError(f"{what}: argument {i + 1} contains NUL.")

@@ -4,7 +4,7 @@ Paths below are **likely to conflict** or are **fork-specific**. Use this when m
 
 ## Core C/C++ (telemetry & CLI)
 
-- `siem_log.c`, `siem_log.h`
+- `siem_log.cc`, `siem_log.h`
 - `nmap.cc`, `nmap.h` (SIEM init, options, scan start/end hooks)
 - `output.cc` (SIEM port/host/service/OS hooks; upstream may touch heavily)
 - `nmap_opt.cc` / option tables (long options for fork-specific flags)
@@ -35,7 +35,9 @@ Paths below are **likely to conflict** or are **fork-specific**. Use this when m
 
 ## Security & operator docs
 
-- `docs/security/*.md` (incl. **OPERATORS.md**)
+- `docs/security/*.md` (incl. **OPERATORS.md**, **CODE-AUDIT-C-NSE-FULL-SCAN.md**, **FORK-C-CORE-SECURITY-INVENTORY.md**)
+- `maint/security_audit_static_grep.sh` — repeatable C/NSE high-risk pattern greps
+- `maint/fork_c_upstream_diff.sh` — `git diff` stat/name-only for `*.c`/`*.cc`/`*.h` vs **upstream** (after fetch)
 - `docs/FORK-MAINTENANCE.md`
 - `docs/nse-offsec-scripts.md`
 - `docs/IDS-EVASION-NMAP-XYBERPIX.md`
@@ -52,6 +54,7 @@ Paths below are **likely to conflict** or are **fork-specific**. Use this when m
 
 ## Maintenance / CI
 
+- `todo/README.md` — notes that `todo/*.txt` are **upstream developer archives**, not the fork’s live backlog (see root **`CHANGELOG`** `[nmap-xyberpix]`)
 - `maint/*.py`, `maint/*.sh` (self-tests, data refresh, merge helpers)
 - `maint/data/nmap-long-options-baseline.txt` (parsed from `nmap.cc`; regen with `maint/update_mcp_longopt_baseline.py`)
 - `maint/data/zenmap-nmap-longopt-exceptions.txt` (nmap long opts not exposed in Zenmap `LONG_OPTIONS`)

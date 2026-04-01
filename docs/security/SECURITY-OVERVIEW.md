@@ -1,6 +1,6 @@
 # nmap-xyberpix security overview
 
-**Operators:** start with the consolidated guide [OPERATORS.md](OPERATORS.md) (acknowledgement flags, env vars, links). **Maintainers:** after upstream merges, see [FORK-MAINTENANCE.md](../FORK-MAINTENANCE.md).
+**Operators:** start with the consolidated guide [OPERATORS.md](OPERATORS.md) (acknowledgement flags, env vars, links). **Maintainers:** after upstream merges, see [FORK-MAINTENANCE.md](../FORK-MAINTENANCE.md). **Fork C/C++ vs upstream:** [FORK-C-CORE-SECURITY-INVENTORY.md](FORK-C-CORE-SECURITY-INVENTORY.md) and `maint/fork_c_upstream_diff.sh` (after `git fetch upstream`). **C / NSE static review methodology:** [CODE-AUDIT-C-NSE-FULL-SCAN.md](CODE-AUDIT-C-NSE-FULL-SCAN.md) and `maint/security_audit_static_grep.sh`.
 
 This document ties together **safe-by-default** behavior for fork-specific features: the **MCP server**, **SIEM logging**, and **offensive-research NSE**. It does not replace upstream Nmap’s own security model (privileges, network access, script safety levels).
 

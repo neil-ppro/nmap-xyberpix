@@ -27,6 +27,14 @@ Or use the helper (fetches then merges):
 maint/merge-upstream.sh master
 ```
 
+After a successful fetch, optional **fork C/C++ diff** (stat + changed files):
+
+```bash
+./maint/fork_c_upstream_diff.sh
+```
+
+See [docs/security/FORK-C-CORE-SECURITY-INVENTORY.md](security/FORK-C-CORE-SECURITY-INVENTORY.md).
+
 Resolve conflicts with preference order:
 
 1. **Security-sensitive** nmap-xyberpix behavior (MCP policy, `http_offsec`, SIEM) — keep fork logic unless upstream clearly supersedes it.

@@ -46,7 +46,16 @@ def test_policy_hostnames_only(monkeypatch: pytest.MonkeyPatch, tmp_path) -> Non
     monkeypatch.setenv("NMAP_MCP_POLICY_FILE", str(polf))
     pol = load_mcp_policy()
     assert policy_targets_error(["lab.local"], pol) is None
+    assert policy_targets_error(["LAB.LOCAL."], pol) is None
     assert policy_targets_error(["evil.example"], pol) is not None
+
+
+def test_policy_file_size_cap(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    polf = tmp_path / "p.json"
+    polf.write_bytes(b"x" * (300 * 1024))
+    monkeypatch.setenv("NMAP_MCP_POLICY_FILE", str(polf))
+    with pytest.raises(RuntimeError, match="exceeds"):
+        load_mcp_policy()
 
 
 def test_policy_cidr_allow(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
@@ -77,3 +86,14 @@ def test_audit_append_writes_line(monkeypatch: pytest.MonkeyPatch, tmp_path) -> 
     row = json.loads(data)
     assert row["event"] == "test_event"
     assert row["ok"] is True
+
+
+def test_audit_truncates_long_strings(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    logf = tmp_path / "audit.ndjson"
+    monkeypatch.setenv("NMAP_MCP_AUDIT_LOG", str(logf))
+    huge = "E" * 50_000
+    audit_append("big", msg=huge)
+    row = json.loads(logf.read_text(encoding="utf-8").strip())
+    assert row["event"] == "big"
+    assert len(row["msg"]) < len(huge)
+    assert row["msg"].endswith("[...]")

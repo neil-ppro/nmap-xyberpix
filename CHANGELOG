@@ -1,5 +1,13 @@
 #Nmap Changelog ($Id$); -*-text-*-
 
+o [nmap-xyberpix] **Maintainer security inventory (fork C/C++)**: **`docs/security/FORK-C-CORE-SECURITY-INVENTORY.md`** lists fork-owned/high-churn **C/C++** sources to re-review vs upstream; **`maint/fork_c_upstream_diff.sh`** prints **`git diff`** stat and file list for **`*.c`/`*.cc`/`*.h`** when **`upstream`** is configured and fetched (**`UPSTREAM-MERGE.md`**). **`maint/FORK-FILES.md`** corrected **`siem_log.c`** to **`siem_log.cc`**. **SECURITY-OVERVIEW** links the inventory.
+
+o [nmap-xyberpix] **Security documentation / static review**: **`docs/security/CODE-AUDIT-C-NSE-FULL-SCAN.md`** explains scope and limits of auditing **Nmap/Ncat/Nping/nfuzz C** and **NSE**; **`maint/security_audit_static_grep.sh`** runs portable **`grep -R`** passes (prunes bundled libs; word-boundary **`system`/`popen`**). Linked from **SECURITY-OVERVIEW** and **`maint/FORK-FILES.md`**.
+
+o [nmap-xyberpix] **Security hardening**: **`NMAP_MCP_POLICY_FILE`** read capped at **256 KiB** with **mtime-scoped cache**; **`allowed_hostnames`** matching is **DNS case-insensitive** with trailing-dot strip. **`NMAP_MCP_AUDIT_LOG`** sanitizes/truncates strings and lists and caps serialized line size. **xyberpix-gui** **`validate_argv_list`** rejects more than **1024** argv entries. **MCP** **`nmap_offsec_*`** tools log **`phase=scope`** audit events on target-scope failures (parity with **`nmap_run_scan`**). Tests and **`docs/MCP-POLICY-FILE.md`** / MCP **README** updated.
+
+o [nmap-xyberpix] **`todo/README.md`**: documents that **`todo/*.txt`** are historical **upstream** Nmap developer notes, not the fork’s task list; points maintainers to **`CHANGELOG`** **`[nmap-xyberpix]`**. **`maint/FORK-FILES.md`** lists the README.
+
 o [nmap-xyberpix] **xyberpix-gui**: **nxytools** sidebar page (**`NxytoolsPage`**) with tabs for **`nxy-banner`**, **`nxy-dnsperm`**, **`nxy-httpfuzz`**, **`nxy-wsprobe`** (auto **`--authorized`**); **Settings** path overrides for each script; **`binaries.resolve_binary`** looks under **`nxytools/`** when **`NMAP_XYBERPIX_ROOT`** is set. Docs: **xyberpix-gui/README.md**, **SECURITY-OVERVIEW**, **OPERATORS**; **`tests_fork`** argv test for nxytools “extra” field.
 
 o [nmap-xyberpix] **README-nmap-xyberpix**: table rows for **nxytools** and MCP policy/audit env vars (links **`docs/NXYTOOLS.md`**, **`docs/MCP-POLICY-FILE.md`**); CI note includes **`make build-nxytools`**.

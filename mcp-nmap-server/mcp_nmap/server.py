@@ -1154,6 +1154,14 @@ def nmap_offsec_dry_run(
 
     ok_scope, scope_err = _targets_allowed_for_scope(targets, network_scope)
     if not ok_scope:
+        audit_append(
+            "mcp_nmap_offsec_dry_run",
+            ok=False,
+            error=scope_err,
+            tool="nmap_offsec_dry_run",
+            preset_id=preset_id,
+            phase="scope",
+        )
         return {"ok": False, "error": scope_err}
 
     file_pol, perr = _mcp_apply_optional_policy(scan_options, targets)
@@ -1232,6 +1240,14 @@ def nmap_offsec_run_scan(
 
     ok_scope, scope_err = _targets_allowed_for_scope(targets, network_scope)
     if not ok_scope:
+        audit_append(
+            "mcp_nmap_offsec_run_scan",
+            ok=False,
+            phase="scope",
+            error=scope_err,
+            tool="nmap_offsec_run_scan",
+            preset_id=preset_id,
+        )
         return {"ok": False, "error": scope_err}
 
     file_pol, perr = _mcp_apply_optional_policy(scan_options, targets)
